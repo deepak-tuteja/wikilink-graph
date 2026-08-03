@@ -5,6 +5,8 @@ import { watchWikiPlugin } from "./scripts/watch-wiki-plugin.mjs";
 const PORT = Number(process.env.PORT) || 5179;
 
 export default defineConfig({
+  // GH Pages project sites serve from a subpath; only the deploy workflow sets this.
+  base: process.env.GH_PAGES ? "/wikilink-graph/" : "/",
   // WIKI_WATCH=1 (set by `wikilink-graph start --watch`) re-parses the wiki + full-reloads on
   // .md changes. Off by default so plain `npm run dev` behavior is unchanged.
   plugins: [react(), ...(process.env.WIKI_WATCH === "1" ? [watchWikiPlugin()] : [])],
