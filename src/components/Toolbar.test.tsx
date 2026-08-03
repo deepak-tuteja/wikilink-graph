@@ -31,6 +31,10 @@ function baseProps() {
     onDeleteView: vi.fn(),
     theme: "dark" as const,
     onToggleTheme: vi.fn(),
+    onShowHelp: vi.fn(),
+    listView: false,
+    onToggleListView: vi.fn(),
+    onExportPng: vi.fn(),
   };
 }
 
@@ -133,5 +137,48 @@ describe("Toolbar — theme toggle", () => {
   it("shows a moon icon in light theme", () => {
     render(<Toolbar {...baseProps()} theme="light" />);
     expect(screen.getByRole("button", { name: "☾" })).toBeInTheDocument();
+  });
+});
+
+describe("Toolbar — help button", () => {
+  it("calls onShowHelp when clicked", async () => {
+    const user = userEvent.setup();
+    const onShowHelp = vi.fn();
+    render(<Toolbar {...baseProps()} onShowHelp={onShowHelp} />);
+    await user.click(screen.getByRole("button", { name: "Show help" }));
+    expect(onShowHelp).toHaveBeenCalled();
+  });
+});
+
+describe("Toolbar — list view toggle (M8)", () => {
+  it("reflects the off state and calls onToggleListView on click", async () => {
+    const user = userEvent.setup();
+    const onToggleListView = vi.fn();
+    render(<Toolbar {...baseProps()} listView={false} onToggleListView={onToggleListView} />);
+    const button = screen.getByRole("button", { name: /List view/ });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    await user.click(button);
+    expect(onToggleListView).toHaveBeenCalled();
+  });
+
+  it("reflects the on state via aria-pressed", () => {
+    render(<Toolbar {...baseProps()} listView={true} />);
+    expect(screen.getByRole("button", { name: /List view/ })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("Toolbar — PNG export (M10)", () => {
+  it("shows an Export PNG button in graph view and calls onExportPng when clicked", async () => {
+    const user = userEvent.setup();
+    const onExportPng = vi.fn();
+    render(<Toolbar {...baseProps()} listView={false} onExportPng={onExportPng} />);
+
+    await user.click(screen.getByRole("button", { name: /PNG/ }));
+    expect(onExportPng).toHaveBeenCalled();
+  });
+
+  it("hides the Export PNG button in list view — there's no canvas to snapshot", () => {
+    render(<Toolbar {...baseProps()} listView={true} />);
+    expect(screen.queryByRole("button", { name: /PNG/ })).not.toBeInTheDocument();
   });
 });

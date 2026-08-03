@@ -13,6 +13,10 @@ interface Props {
   onDeleteView: (name: string) => void;
   theme: Theme;
   onToggleTheme: () => void;
+  onShowHelp: () => void;
+  listView: boolean;
+  onToggleListView: () => void;
+  onExportPng: () => void;
 }
 
 export function Toolbar({
@@ -26,6 +30,10 @@ export function Toolbar({
   onDeleteView,
   theme,
   onToggleTheme,
+  onShowHelp,
+  listView,
+  onToggleListView,
+  onExportPng,
 }: Props) {
   const [view, setView] = useState("");
 
@@ -98,10 +106,26 @@ export function Toolbar({
 
       <button
         className="theme-toggle"
+        title={listView ? "Switch to graph view" : "Switch to accessible list view"}
+        aria-pressed={listView}
+        onClick={onToggleListView}
+      >
+        {listView ? "🕸" : "☰"} List view
+      </button>
+      {!listView && (
+        <button className="theme-toggle" title="Export the current view as a PNG" onClick={onExportPng}>
+          ⬇ PNG
+        </button>
+      )}
+      <button
+        className="theme-toggle"
         title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
         onClick={onToggleTheme}
       >
         {theme === "dark" ? "☀" : "☾"}
+      </button>
+      <button className="theme-toggle" title="Show help" aria-label="Show help" onClick={onShowHelp}>
+        ?
       </button>
     </div>
   );

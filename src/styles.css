@@ -87,6 +87,19 @@ body {
 .app { position: relative; height: 100vh; overflow: hidden; }
 .graph { position: absolute; inset: 0; }
 .msg { padding: 2rem; color: var(--fg-muted); }
+
+/* ---- List view (M8, accessible fallback for the canvas) ---- */
+.list-view { position: absolute; inset: 0; overflow-y: auto; padding: 5.5rem 1rem 1.5rem; }
+.list-view-empty { color: var(--fg-muted); text-align: center; margin-top: 2rem; }
+.list-view ul { list-style: none; margin: 0 auto; padding: 0; max-width: 640px; display: flex; flex-direction: column; gap: 0.4rem; }
+.list-view li button {
+  width: 100%; text-align: left; display: flex; flex-direction: column; gap: 0.15rem;
+  background: var(--panel-bg-solid); border: 1px solid var(--panel-border); border-radius: 8px;
+  padding: 0.55rem 0.9rem; cursor: pointer; color: var(--fg);
+}
+.list-view li button:hover { background: var(--hover-bg); }
+.list-view-label { font-size: 0.95rem; }
+.list-view-meta { font-size: 0.75rem; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.02em; }
 .error-msg { display: flex; flex-direction: column; align-items: flex-start; gap: 0.8rem; }
 .error-msg button {
   background: var(--input-bg);
@@ -115,6 +128,7 @@ body {
 }
 .filters h3 { margin: 0.6rem 0 0.25rem; font-size: 0.7rem; text-transform: uppercase; color: var(--fg-muted); }
 .filters h3:first-child { margin-top: 0.2rem; }
+.filters .stats { margin: 0.2rem 0 0.5rem; font-size: 0.75rem; color: var(--fg-muted); }
 .filters .hint { text-transform: none; color: var(--fg-dim); font-weight: 400; }
 .filters ul { list-style: none; margin: 0; padding: 0; }
 .filters li { display: flex; align-items: center; gap: 0.4rem; padding: 0.1rem 0; }
@@ -122,6 +136,12 @@ body {
 .filters .ghost-row { color: var(--fg-muted); }
 .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .swatch.ghost { border: 1px dashed #777; background: transparent; }
+.ghost-list { max-height: 140px; overflow-y: auto; }
+.ghost-link {
+  width: 100%; text-align: left; background: none; border: none; color: var(--fg-muted);
+  font: inherit; font-style: italic; padding: 0.15rem 0; cursor: pointer;
+}
+.ghost-link:hover { color: var(--fg); text-decoration: underline; }
 .tag-cloud { display: flex; flex-wrap: wrap; gap: 0.3rem; max-width: 200px; }
 .tag {
   background: var(--tag-bg); border: 1px solid var(--tag-border); color: var(--tag-fg);
@@ -136,6 +156,10 @@ body {
   border: 1px dashed #c08fe8; background: transparent; width: 14px; border-radius: 0;
   border-width: 0 0 1px 0; align-self: center;
 }
+
+/* ---- Filters drawer toggle (mobile only, see breakpoint block below) ---- */
+.filters-toggle { display: none; }
+.filters-backdrop { display: none; }
 
 /* ---- Top toolbar (search + saved views) ---- */
 .toolbar {
@@ -204,6 +228,72 @@ body {
 }
 .theme-toggle:hover { background: var(--hover-bg); }
 
+/* ---- Onboarding overlay ---- */
+.onboarding-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.onboarding {
+  background: var(--panel-bg-solid);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px var(--shadow);
+  padding: 1.4rem 1.6rem;
+  max-width: 380px;
+  width: calc(100vw - 2rem);
+}
+.onboarding h2 {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.onboarding h2:first-child { margin-top: 0; }
+.onboarding-list { list-style: none; margin: 0; padding: 0; }
+.onboarding-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+  color: var(--prose-fg);
+}
+.onboarding-ring, .onboarding-size {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #63e6be;
+  background: var(--fg-dim);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.onboarding-size { width: 18px; height: 18px; border: none; background: var(--fg-dim); }
+.onboarding-list kbd {
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+.onboarding-close {
+  margin-top: 1.2rem;
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--prose-fg);
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.onboarding-close:hover { background: var(--hover-bg); }
+
 /* ---- Minimap (bottom-right overview + viewport rect) ---- */
 .minimap {
   position: absolute;
@@ -215,6 +305,65 @@ body {
   box-shadow: 0 8px 24px var(--shadow);
   cursor: crosshair;
   z-index: 5;
+}
+
+/* ---- Mobile breakpoint (M4): Filters collapses to a drawer, Toolbar wraps/compacts, Minimap
+   hides. Devtools-emulation-verified, not tested on real hardware (decision #7). ---- */
+@media (max-width: 720px) {
+  .filters-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 26;
+    background: var(--panel-bg-solid);
+    border: 1px solid var(--panel-border);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .filters-toggle:hover { background: var(--hover-bg); }
+
+  .filters-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 24;
+  }
+
+  .filters {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(80vw, 300px);
+    max-height: none;
+    border-radius: 0;
+    border-width: 0 1px 0 0;
+    padding-top: 3.6rem;
+    transform: translateX(-100%);
+    transition: transform 180ms ease-out;
+    z-index: 25;
+  }
+  .filters.open { transform: translateX(0); }
+
+  .toolbar {
+    top: 4rem;
+    left: 0.6rem;
+    right: 0.6rem;
+    transform: none;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .search { flex: 1 1 100%; }
+  .search input { width: 100%; }
+
+  .minimap { display: none; }
 }
 
 /* open-in-editor link in the reader bar */

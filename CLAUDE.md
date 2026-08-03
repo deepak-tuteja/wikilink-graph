@@ -17,7 +17,8 @@ this workspace's wiki, while staying reusable for any wiki.
      External URLs and `path:line` source citations are ignored. Edges are **undirected**,
      deduped, with mutual links collapsed to one.
    - A link to a non-existent page becomes a **ghost** node (`type: "ghost"`, dashed in the UI).
-   - Nodes whose slug ∈ `WIKI_EXCLUDE` (default `INDEX,synthesis`) are marked `excluded` and
+   - Nodes whose slug ∈ `WIKI_EXCLUDE` (default `INDEX,synthesis`, overridable per-wiki by
+     `.wikilink-graph.json`'s `exclude` — see "Config file" below) are marked `excluded` and
      hidden by default (togglable via the legend).
    - Each node also carries `tags` (from a leading YAML frontmatter `tags:` block, if any) and
      `status` (YAML frontmatter `status:` key, falling back to a prose `**Status** <word>` line
@@ -76,6 +77,31 @@ this workspace's wiki, while staying reusable for any wiki.
 | `PORT` | `5179` | Vite serve port |
 | `WIKI_WATCH` | unset | `1` re-parses + full-reloads on `.md` changes under `WIKI_DIR` (dev mode only). Set by `--watch`; not meant to be set directly for plain `npm run dev` |
 
+## Config file (`.wikilink-graph.json`, M9)
+
+An optional `.wikilink-graph.json` **inside `WIKI_DIR` itself** (travels with the wiki when
+shared/cloned/committed) covers two things the parser can't infer:
+
+```json
+{
+  "exclude": ["INDEX", "synthesis"],
+  "hiddenTypes": ["notes"],
+  "hiddenTags": ["draft"]
+}
+```
+
+- `exclude` — same meaning as `WIKI_EXCLUDE`/`--exclude`, just wiki-local. Precedence:
+  **CLI flag > env var > config file > built-in default** (`INDEX,synthesis`).
+- `hiddenTypes` — node types hidden by default in the viewer (togglable), independent of `exclude`.
+- `hiddenTags` — nodes carrying any of these tags start hidden by default (togglable), folded
+  into the same hidden-nodes mechanism as `exclude`d hubs rather than a separate filter concept.
+
+Parsed by the pure `parseConfig()` in `scripts/lib/parse-core.mjs`; invalid JSON is warned about
+and ignored (falls back to defaults) rather than crashing the parse. Resolved `hiddenTypes`/
+`hiddenTags` are emitted into `graph.json`'s `meta.defaultHiddenTypes`/`meta.defaultHiddenNodes`,
+which `App.tsx` applies as the initial filter state whenever the URL (M7) carries no override of
+its own. See `examples/config-wiki/` for a worked fixture.
+
 ## CLI (recommended)
 
 `bin/wikilink-graph.mjs` (exposed as the `wikilink-graph` bin, also `npm run cli -- …`) is the easy way to
@@ -94,6 +120,14 @@ ln -s "$(pwd)/bin/wikilink-graph.mjs" ~/.local/bin/wikilink-graph
 (`npm link` was tried first but requires writing to `/usr/local/lib/node_modules`, which needs
 root on a machine where npm's global prefix isn't user-writable — the symlink sidesteps that
 entirely and is the documented install path, not a fallback.)
+
+**Alternative: `npm run pack-install`** (`scripts/pack-install.mjs`, M5) — packs the current
+checkout with `npm pack` and `npm install -g`s the resulting tarball, mirroring testFlow-tests'
+`refresh-tflw`. A real global install (copied into npm's global store) rather than a link back
+into this checkout, at the cost of needing a writable global npm prefix — the symlink above exists
+specifically to sidestep that requirement, so it stays the primary documented path. Never touches
+the npm registry; the tarball is packed to a temp dir and discarded after install. Re-run it after
+a `git pull` to refresh an existing tarball-based install.
 
 **Multiple instances:** each running instance is tracked by its own state file under
 `.wikilink-graph/<port>.{json,log}` (not a single shared pid file), so different wikis can run
@@ -129,3 +163,21 @@ race) is never mis-reported as running. The whole `.wikilink-graph/` directory i
 - `npm run stop` — alias for `wikilink-graph stop`.
 
 Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-graph/`) are gitignored.
+
+## Testing
+
+`npx vitest run` (unit/integration, jsdom + node envs) + `npm run test:cli` (slow CLI smoke test,
+excluded from the default run — spawns real dev servers) + `npm run typecheck` + `npm run build`
+is the full local gate; CI (`.github/workflows/ci.yml`) runs all four on push/PR to `main`.
+
+- `Graph.tsx`/`Minimap.tsx` wrap `react-force-graph-2d`'s canvas rendering, which jsdom can't
+  render without a canvas shim this project doesn't depend on — so the canvas painting itself
+  (`nodeCanvasObject`, the minimap's `ctx.*` calls) isn't unit-tested. Their actual *logic* (dimming
+  precedence, viewport-fit math, pan-coordinate conversion) is extracted into plain functions
+  (`isLit` in `lib/graph.ts`; `fitTransform`/`clampedViewportRect`/`minimapToGraphCoords` in
+  `lib/minimap.ts`) and covered there. Visual/canvas behavior is verified live (dev server +
+  Playwright) instead — not part of the automated suite.
+- `scripts/pack-install.mjs` and `scripts/gen-feature-wiki.mjs` are one-shot ops/dev-fixture
+  scripts that shell out to real system state (a global `npm install -g`, an external source wiki
+  dir) — deliberately left uncovered rather than mocked, same convention as this workspace's other
+  install-workflow scripts (e.g. testFlow-tests' `refresh-tflw`).

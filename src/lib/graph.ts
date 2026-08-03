@@ -22,7 +22,13 @@ export interface GraphLink {
 }
 
 export interface GraphData {
-  meta?: { wikiDir?: string };
+  meta?: {
+    wikiDir?: string;
+    // M9 — .wikilink-graph.json's hiddenTypes/hiddenTags, resolved by the parser into the
+    // concrete defaults the front end applies when the URL carries no override of its own.
+    defaultHiddenTypes?: string[];
+    defaultHiddenNodes?: string[];
+  };
   nodes: GraphNode[];
   links: GraphLink[];
 }
@@ -90,6 +96,24 @@ export function forceCluster(strength = 0.4) {
   }
   force.initialize = (ns: GraphNode[]) => { nodes = ns; };
   return force;
+}
+
+// Graph.tsx's dimming rule, extracted for unit-testability (the canvas painting itself isn't —
+// see CLAUDE.md's testing-boundaries note). `focus` is the caller's already-resolved
+// hover-or-selected id. Search matches take precedence: while searching, only matches stay lit,
+// except a hovered node still lights its own neighbors so you can explore a match's context.
+export function isLit(
+  id: string,
+  focus: string | null,
+  hover: string | null,
+  neighbors: Map<string, Set<string>>,
+  searchIds: Set<string> | null
+): boolean {
+  if (searchIds) {
+    if (hover) return id === hover || (neighbors.get(hover)?.has(id) ?? false);
+    return searchIds.has(id);
+  }
+  return !focus || id === focus || (neighbors.get(focus)?.has(id) ?? false);
 }
 
 export function linkId(l: GraphLink): string {

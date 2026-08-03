@@ -11,8 +11,11 @@ import {
   pageStatus,
   extractWikilinks,
   extractMdLinks,
+  extractImageRefs,
+  resolveRelativeAsset,
   buildEdgeKey,
   EdgeSet,
+  parseConfig,
 } from "./parse-core.mjs";
 
 describe("slugify", () => {
@@ -168,6 +171,52 @@ describe("extractMdLinks", () => {
   });
 });
 
+describe("extractImageRefs", () => {
+  it("extracts a relative image path", () => {
+    expect(extractImageRefs("![alt](assets/diagram.svg)")).toEqual(["assets/diagram.svg"]);
+  });
+
+  it("extracts a title-suffixed image link", () => {
+    expect(extractImageRefs('![alt](img.png "a title")')).toEqual(["img.png"]);
+  });
+
+  it("ignores external http(s) image URLs", () => {
+    expect(extractImageRefs("![alt](https://example.com/img.png)")).toEqual([]);
+  });
+
+  it("ignores data: URIs", () => {
+    expect(extractImageRefs("![alt](data:image/png;base64,AAAA)")).toEqual([]);
+  });
+
+  it("ignores absolute (site-root) paths", () => {
+    expect(extractImageRefs("![alt](/already/absolute.png)")).toEqual([]);
+  });
+
+  it("extracts multiple images in order", () => {
+    expect(extractImageRefs("![a](one.png) text ![b](two.png)")).toEqual(["one.png", "two.png"]);
+  });
+
+  it("returns [] when there are none", () => {
+    expect(extractImageRefs("no images here, just a [link](page.md)")).toEqual([]);
+  });
+});
+
+describe("resolveRelativeAsset", () => {
+  it("resolves a same-directory reference", () => {
+    expect(resolveRelativeAsset("hello.md", "assets/diagram.svg")).toBe("assets/diagram.svg");
+  });
+
+  it("resolves relative to a nested file's directory", () => {
+    expect(resolveRelativeAsset("guides/setup.md", "img.png")).toBe("guides/img.png");
+  });
+
+  it("collapses '..' segments back up to the wiki root", () => {
+    expect(resolveRelativeAsset("deep/nested/path/buried.md", "../../../assets/diagram.svg")).toBe(
+      "assets/diagram.svg"
+    );
+  });
+});
+
 describe("buildEdgeKey", () => {
   it("is symmetric regardless of argument order", () => {
     expect(buildEdgeKey("link", "a", "b")).toBe(buildEdgeKey("link", "b", "a"));
@@ -205,5 +254,45 @@ describe("EdgeSet", () => {
     expect(edges.add("a", null)).toBe(false);
     expect(edges.add(null, "b")).toBe(false);
     expect(edges.links).toHaveLength(0);
+  });
+});
+
+describe("parseConfig", () => {
+  it("parses exclude/hiddenTypes/hiddenTags out of a full config", () => {
+    expect(
+      parseConfig('{"exclude": ["INDEX"], "hiddenTypes": ["archive"], "hiddenTags": ["draft"]}')
+    ).toEqual({ exclude: ["INDEX"], hiddenTypes: ["archive"], hiddenTags: ["draft"] });
+  });
+
+  it("defaults hiddenTypes/hiddenTags to [] and leaves exclude undefined when absent", () => {
+    expect(parseConfig("{}")).toEqual({ exclude: undefined, hiddenTypes: [], hiddenTags: [] });
+  });
+
+  it("leaves exclude undefined (not the empty array) when the field isn't an array at all", () => {
+    expect(parseConfig('{"exclude": "INDEX"}').exclude).toBeUndefined();
+  });
+
+  it("filters non-string entries out of exclude rather than rejecting the whole field", () => {
+    expect(parseConfig('{"exclude": ["a", 1, "b"]}').exclude).toEqual(["a", "b"]);
+  });
+
+  it("preserves an explicit empty exclude array as a deliberate override", () => {
+    expect(parseConfig('{"exclude": []}').exclude).toEqual([]);
+  });
+
+  it("filters out non-string entries from hiddenTypes/hiddenTags instead of rejecting the whole field", () => {
+    expect(parseConfig('{"hiddenTypes": ["a", 2, "b"]}').hiddenTypes).toEqual(["a", "b"]);
+  });
+
+  it("ignores unrelated keys", () => {
+    expect(parseConfig('{"theme": "dark"}')).toEqual({
+      exclude: undefined,
+      hiddenTypes: [],
+      hiddenTags: [],
+    });
+  });
+
+  it("throws on invalid JSON, leaving error reporting to the caller", () => {
+    expect(() => parseConfig("{not json")).toThrow();
   });
 });

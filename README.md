@@ -45,6 +45,26 @@ wikilink-graph stop                           # stop it, freeing the port
 Multiple wikis can run at once, each on its own `--port` — `status`/`stop` list them all when
 more than one is running, or target one with `--port <n>` (`stop` also takes `--all`).
 
+**Updating an existing global install** — the symlink above always tracks the checkout it points
+at, so a plain `git pull` is enough. If you installed via `npm pack-install` instead (below),
+re-run it after pulling to refresh the globally-installed copy:
+
+```bash
+cd wikilink-graph && git pull && npm run pack-install
+```
+
+**Alternative install — real global package, not a symlink.** `npm run pack-install` packs the
+current checkout into a tarball and `npm install -g`s it — a real global install (files copied
+into npm's global store) instead of a link back into this checkout, so it survives the checkout
+being moved or deleted. Never touches the npm registry. Requires a writable global npm prefix
+(the same constraint `npm install -g` always has — the symlink above sidesteps it entirely, which
+is why it's the recommended path on a locked-down global prefix):
+
+```bash
+cd wikilink-graph && npm install
+npm run pack-install
+```
+
 `start` options:
 
 | Flag | Default | Meaning |
@@ -82,6 +102,24 @@ npm run stop      # alias for `wikilink-graph stop`
 | `WIKI_EXCLUDE` | `INDEX,synthesis` | Slugs hidden by default (togglable) |
 | `PORT` | `5179` | Vite serve port |
 | `WIKI_WATCH` | unset | `1` enables `--watch`'s re-parse + full-reload behavior (dev mode only) |
+
+## Configuration (config file)
+
+Drop a `.wikilink-graph.json` **inside the wiki folder itself** (so it travels with the wiki when
+shared/cloned/committed) to set per-wiki defaults without touching flags or env vars:
+
+```json
+{
+  "exclude": ["INDEX", "synthesis"],
+  "hiddenTypes": ["notes"],
+  "hiddenTags": ["draft"]
+}
+```
+
+`exclude` behaves exactly like `WIKI_EXCLUDE`/`--exclude`; precedence is
+**CLI flag > env var > config file > built-in default**. `hiddenTypes`/`hiddenTags` set which
+node types/tagged pages start hidden in the viewer (all still togglable). See
+`examples/config-wiki/` for a working example.
 
 ## How it works
 

@@ -17,15 +17,34 @@ import {
   pageStatus,
   extractWikilinks,
   extractMdLinks,
+  extractImageRefs,
+  resolveRelativeAsset,
   EdgeSet,
+  parseConfig,
 } from "./lib/parse-core.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
 const WIKI_DIR = path.resolve(ROOT, process.env.WIKI_DIR || "examples/demo-wiki");
+
+// Config file (M9, decision #17/#18): `.wikilink-graph.json` inside the wiki folder itself, so it
+// travels with the wiki when shared/cloned/committed. Covers exclude-list + default hidden
+// types/tags only. Precedence for `exclude`: CLI flag > env var > config file > built-in default
+// (bin/wikilink-graph.mjs only sets WIKI_EXCLUDE when --exclude is explicitly passed, so an unset
+// env var here means neither the CLI flag nor a directly-exported env var overrode it).
+const CONFIG_FILE = path.join(WIKI_DIR, ".wikilink-graph.json");
+let config = { exclude: undefined, hiddenTypes: [], hiddenTags: [] };
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    config = parseConfig(fs.readFileSync(CONFIG_FILE, "utf8"));
+  } catch (e) {
+    console.warn(`[wikilink-graph] couldn't parse ${CONFIG_FILE}, ignoring it: ${e.message}`);
+  }
+}
+
 const EXCLUDE = new Set(
-  (process.env.WIKI_EXCLUDE ?? "INDEX,synthesis")
+  (process.env.WIKI_EXCLUDE ?? (config.exclude ? config.exclude.join(",") : "INDEX,synthesis"))
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
@@ -70,8 +89,17 @@ for (const file of mdFiles) {
   });
 }
 
+// Config-driven default hidden nodes (M9): every node carrying one of `config.hiddenTags`
+// starts hidden in the UI, same effect as `excluded` but tag-driven instead of slug-driven —
+// folded into `defaultHiddenNodes` (meta) rather than a separate filter dimension, since the
+// front end's `hiddenNodes` set already covers "hidden by default, togglable back on."
+const defaultHiddenNodes = config.hiddenTags.length
+  ? [...nodes.values()].filter((n) => n.tags.some((t) => config.hiddenTags.includes(t))).map((n) => n.id)
+  : [];
+
 // --- extract edges -----------------------------------------------------------
 const edges = new EdgeSet();
+const imageTargets = new Set(); // relative-to-WIKI_DIR paths, deduped across all pages
 
 function ensureGhost(slug) {
   if (!nodes.has(slug)) {
@@ -91,6 +119,7 @@ function ensureGhost(slug) {
 
 for (const file of mdFiles) {
   const src = slugify(file);
+  const rel = path.relative(WIKI_DIR, file).split(path.sep).join("/");
   const text = fs.readFileSync(file, "utf8");
 
   for (const target of extractWikilinks(text)) {
@@ -101,6 +130,10 @@ for (const file of mdFiles) {
   for (const target of extractMdLinks(text)) {
     ensureGhost(target);
     edges.add(src, target);
+  }
+
+  for (const img of extractImageRefs(text)) {
+    imageTargets.add(resolveRelativeAsset(rel, img));
   }
 }
 
@@ -142,9 +175,25 @@ for (const node of nodes.values()) {
   fs.copyFileSync(path.join(WIKI_DIR, node.file), dest);
 }
 
+// --- copy referenced images alongside the pages that embed them (M3) --------
+for (const relImg of imageTargets) {
+  const src = path.join(WIKI_DIR, relImg);
+  if (!fs.existsSync(src)) {
+    console.warn(`[wikilink-graph] embedded image not found, skipping: ${relImg}`);
+    continue;
+  }
+  const dest = path.join(WIKI_OUT, relImg);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+}
+
 // --- emit graph.json ---------------------------------------------------------
 fs.mkdirSync(PUBLIC, { recursive: true });
-const graph = { meta: { wikiDir: WIKI_DIR }, nodes: [...nodes.values()], links: edges.links };
+const graph = {
+  meta: { wikiDir: WIKI_DIR, defaultHiddenTypes: config.hiddenTypes, defaultHiddenNodes },
+  nodes: [...nodes.values()],
+  links: edges.links,
+};
 fs.writeFileSync(path.join(PUBLIC, "graph.json"), JSON.stringify(graph, null, 2));
 
 const linkEdgeCount = graph.links.filter((l) => l.kind === "link").length;

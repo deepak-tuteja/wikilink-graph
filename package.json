@@ -11,6 +11,7 @@
   "scripts": {
     "cli": "node bin/wikilink-graph.mjs",
     "stop": "node bin/wikilink-graph.mjs stop",
+    "pack-install": "node scripts/pack-install.mjs",
     "parse": "node scripts/parse-wiki.mjs",
     "gen-feature-wiki": "node scripts/gen-feature-wiki.mjs",
     "dev": "npm run parse && vite",

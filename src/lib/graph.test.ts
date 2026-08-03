@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { colorForType, nodeRadius, colorForStatus, linkId, endpointIds, forceCluster } from "./graph";
+import { colorForType, nodeRadius, colorForStatus, linkId, endpointIds, forceCluster, isLit } from "./graph";
 import type { GraphNode, GraphLink } from "./graph";
 
 function node(overrides: Partial<GraphNode> = {}): GraphNode {
@@ -87,6 +87,39 @@ describe("linkId / endpointIds", () => {
     const l: GraphLink = { source: "a", target: node({ id: "b" }), kind: "link" };
     expect(linkId(l)).toBe("a b");
     expect(endpointIds(l)).toEqual(["a", "b"]);
+  });
+});
+
+describe("isLit", () => {
+  const neighbors = new Map<string, Set<string>>([
+    ["a", new Set(["b", "c"])],
+    ["b", new Set(["a"])],
+  ]);
+
+  it("lights everything when there's no focus, hover, or search", () => {
+    expect(isLit("a", null, null, neighbors, null)).toBe(true);
+    expect(isLit("z", null, null, neighbors, null)).toBe(true);
+  });
+
+  it("lights only the focused node and its neighbors when there's a focus and no search", () => {
+    expect(isLit("a", "a", null, neighbors, null)).toBe(true);
+    expect(isLit("b", "a", null, neighbors, null)).toBe(true);
+    expect(isLit("c", "a", null, neighbors, null)).toBe(true);
+    expect(isLit("z", "a", null, neighbors, null)).toBe(false);
+  });
+
+  it("while searching with no hover, only search matches are lit", () => {
+    const searchIds = new Set(["c"]);
+    expect(isLit("c", "a", null, neighbors, searchIds)).toBe(true);
+    expect(isLit("a", "a", null, neighbors, searchIds)).toBe(false);
+    expect(isLit("b", "a", null, neighbors, searchIds)).toBe(false);
+  });
+
+  it("while searching, a hovered node overrides search matches and lights its own neighbors instead", () => {
+    const searchIds = new Set(["c"]);
+    expect(isLit("b", "b", "b", neighbors, searchIds)).toBe(true);
+    expect(isLit("a", "b", "b", neighbors, searchIds)).toBe(true);
+    expect(isLit("c", "b", "b", neighbors, searchIds)).toBe(false);
   });
 });
 

@@ -61,6 +61,7 @@ export function pageStatus(fmLines, text) {
 
 const WIKILINK = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
 const MDLINK = /\[[^\]]*\]\(([^)]+)\)/g;
+const IMAGE_LINK = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
 // Returns the slugified targets of every [[wikilink]] in text (raw extraction only —
 // ghost-node creation and edge dedup stay with the caller, which owns the shared node map).
@@ -84,6 +85,50 @@ export function extractMdLinks(text) {
     out.push(slugify(href.split("#")[0]));
   }
   return out;
+}
+
+// Returns the relative targets of every ![alt](rel/path.png) image reference in text.
+// External (http(s)/data:/etc) and absolute (/...) targets are skipped — those already work
+// unmodified, only relative references need their source file copied alongside the .md.
+export function extractImageRefs(text) {
+  const out = [];
+  for (const m of text.matchAll(IMAGE_LINK)) {
+    const href = m[1].trim();
+    if (/^[a-z]+:/i.test(href) || href.startsWith("/")) continue;
+    out.push(href);
+  }
+  return out;
+}
+
+// Resolve `rel` against the directory of `mdFileRel` (both POSIX-style, relative to the wiki
+// root), collapsing `.`/`..` segments. Mirrors how the front end resolves an <img src> that
+// react-markdown emits verbatim relative to its source page — see src/lib/resolveAsset.ts.
+export function resolveRelativeAsset(mdFileRel, rel) {
+  const dir = mdFileRel.split("/").slice(0, -1);
+  const parts = [...dir, ...rel.split("/")];
+  const out = [];
+  for (const part of parts) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") out.pop();
+    else out.push(part);
+  }
+  return out.join("/");
+}
+
+// Parses `.wikilink-graph.json` (decision #17/#18 in PLAN_UX_ADOPTION.md — lives inside the wiki
+// folder, travels with it). Throws on invalid JSON so the caller (which owns fs/console) decides
+// how to report it. `exclude` is left undefined when absent/invalid so the caller can distinguish
+// "config doesn't set it" (fall through to the env var / built-in default) from an explicit,
+// deliberately-empty override — same undefined-vs-[] pattern as src/lib/filterUrl.ts's hiddenNodes.
+// `hiddenTypes`/`hiddenTags` default to [] (no config-driven default = no data-independent default).
+export function parseConfig(text) {
+  const raw = JSON.parse(text);
+  const strArray = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : undefined);
+  return {
+    exclude: strArray(raw.exclude),
+    hiddenTypes: strArray(raw.hiddenTypes) ?? [],
+    hiddenTags: strArray(raw.hiddenTags) ?? [],
+  };
 }
 
 export function buildEdgeKey(kind, a, b) {

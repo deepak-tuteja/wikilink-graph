@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import type { GraphNode } from "../lib/graph";
 import { colorForType } from "../lib/graph";
+import { resolveImageSrc } from "../lib/resolveAsset";
 
 interface Crumb {
   slug: string;
@@ -122,6 +123,9 @@ export function PageView({ node, slug, types, exists, wikiDir, crumbs, onCrumb, 
               // would otherwise strip the unknown protocol and break the link.
               urlTransform={(url) => (url.startsWith("wiki:") ? url : defaultUrlTransform(url))}
               components={{
+                img({ src, alt }) {
+                  return <img src={resolveImageSrc(src, node?.file)} alt={alt ?? ""} />;
+                },
                 a({ href, children }) {
                   const target = targetSlug(href);
                   if (target) {

@@ -6,6 +6,8 @@ edge cases: unicode slugs ([[café]], [[日本語ページ]]), a page with a lar
 ([[hub]]), a 3-level-deep nested page ([[buried]]), and an isolated page with no links at all
 ([[orphan]] — not linked from here on purpose).
 
+![A tiny diagram](assets/diagram.svg)
+
 Point the viewer at this folder to exercise it:
 
 ```bash

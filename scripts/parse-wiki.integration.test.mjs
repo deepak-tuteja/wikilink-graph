@@ -95,4 +95,50 @@ describe("parse-wiki.mjs against examples/edge-case-wiki", () => {
       expect(fs.existsSync(path.join(outDir, "wiki", node.file))).toBe(true);
     }
   });
+
+  it("copies an image embedded via a relative ![]() reference, resolved next to its source page (M3)", () => {
+    expect(fs.existsSync(path.join(outDir, "wiki", "assets", "diagram.svg"))).toBe(true);
+  });
+
+  it("copies the same image once even when referenced from a deeply-nested page via '..' (M3)", () => {
+    // hello.md references assets/diagram.svg directly; buried.md references the same file via
+    // ../../../assets/diagram.svg — both must resolve to the one copy at wiki/assets/diagram.svg.
+    const copied = fs.readFileSync(path.join(outDir, "wiki", "assets", "diagram.svg"), "utf8");
+    const source = fs.readFileSync(
+      path.join(ROOT, "examples", "edge-case-wiki", "assets", "diagram.svg"),
+      "utf8"
+    );
+    expect(copied).toBe(source);
+  });
+});
+
+describe("parse-wiki.mjs against examples/config-wiki (.wikilink-graph.json, M9)", () => {
+  it("applies exclude/hiddenTypes/hiddenTags from the config file when no env var overrides it", () => {
+    const { graph } = runParser("examples/config-wiki");
+
+    const archiveHub = graph.nodes.find((n) => n.id === "archive-hub");
+    expect(archiveHub.excluded).toBe(true);
+
+    expect(graph.meta.defaultHiddenTypes).toEqual(["notes"]);
+    expect(graph.meta.defaultHiddenNodes).toEqual(["draft-page"]);
+  });
+
+  it("lets an explicit WIKI_EXCLUDE env var override the config file's exclude list (CLI/env > config precedence)", () => {
+    const { graph } = runParser("examples/config-wiki", "");
+
+    const archiveHub = graph.nodes.find((n) => n.id === "archive-hub");
+    expect(archiveHub.excluded).toBe(false);
+    // hiddenTypes/hiddenTags have no CLI/env equivalent (decision #18) — the config still applies.
+    expect(graph.meta.defaultHiddenTypes).toEqual(["notes"]);
+  });
+});
+
+describe("parse-wiki.mjs against a malformed .wikilink-graph.json (M9)", () => {
+  it("warns and falls back to the built-in default instead of crashing", () => {
+    const { graph } = runParser("examples/config-wiki-bad-config");
+
+    expect(graph.nodes.find((n) => n.id === "hello")).toBeDefined();
+    expect(graph.meta.defaultHiddenTypes).toEqual([]);
+    expect(graph.meta.defaultHiddenNodes).toEqual([]);
+  });
 });

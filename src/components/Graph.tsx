@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import type { GraphData, GraphNode } from "../lib/graph";
-import { colorForType, colorForStatus, nodeRadius, endpointIds, forceCluster } from "../lib/graph";
+import { colorForType, colorForStatus, nodeRadius, endpointIds, forceCluster, isLit } from "../lib/graph";
 import type { Theme } from "../lib/theme";
 import { GRAPH_PALETTE } from "../lib/theme";
 import { Minimap } from "./Minimap";
@@ -16,10 +16,25 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-export function Graph({ data, types, neighbors, selected, searchIds, theme, onSelect }: Props) {
+// M10 — exposes a PNG snapshot of the current view to App.tsx via a ref, since the canvas
+// element itself (drawn by ForceGraph2D, already including its background fill) lives inside
+// this component and isn't otherwise reachable from outside it.
+export interface GraphHandle {
+  exportPNG: () => string | null;
+}
+
+export const Graph = forwardRef<GraphHandle, Props>(function Graph(
+  { data, types, neighbors, selected, searchIds, theme, onSelect },
+  ref
+) {
   const fgRef = useRef<any>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
   const palette = GRAPH_PALETTE[theme];
+
+  useImperativeHandle(ref, () => ({
+    exportPNG: () => canvasContainerRef.current?.querySelector("canvas")?.toDataURL("image/png") ?? null,
+  }));
 
   // Obsidian-style hover: the hovered node repels its surroundings (neighbors
   // drift outward), then they ease back once the cursor leaves.
@@ -49,14 +64,7 @@ export function Graph({ data, types, neighbors, selected, searchIds, theme, onSe
 
   const focus = hover ?? selected;
   const lit = useCallback(
-    (id: string) => {
-      // search takes precedence: only matches stay lit (plus a hovered node + neighbors)
-      if (searchIds) {
-        if (hover) return id === hover || (neighbors.get(hover)?.has(id) ?? false);
-        return searchIds.has(id);
-      }
-      return !focus || id === focus || (neighbors.get(focus)?.has(id) ?? false);
-    },
+    (id: string) => isLit(id, focus, hover, neighbors, searchIds),
     [focus, hover, neighbors, searchIds]
   );
 
@@ -113,7 +121,7 @@ export function Graph({ data, types, neighbors, selected, searchIds, theme, onSe
   );
 
   return (
-    <div className="graph">
+    <div className="graph" ref={canvasContainerRef}>
       <ForceGraph2D
         ref={fgRef}
         graphData={data}
@@ -147,4 +155,4 @@ export function Graph({ data, types, neighbors, selected, searchIds, theme, onSe
       <Minimap data={data} types={types} fgRef={fgRef} />
     </div>
   );
-}
+});

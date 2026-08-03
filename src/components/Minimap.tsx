@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { GraphData } from "../lib/graph";
 import { colorForType } from "../lib/graph";
+import { fitTransform, clampedViewportRect, minimapToGraphCoords } from "../lib/minimap";
 
 const WIDTH = 180;
 const HEIGHT = 130;
@@ -32,23 +33,19 @@ export function Minimap({ data, types, fgRef }: Props) {
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
       if (nodes.length === 0) return;
 
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const n of nodes) {
-        minX = Math.min(minX, n.x!); maxX = Math.max(maxX, n.x!);
-        minY = Math.min(minY, n.y!); maxY = Math.max(maxY, n.y!);
-      }
-      const w = Math.max(maxX - minX, 1);
-      const h = Math.max(maxY - minY, 1);
-      const scale = Math.min((WIDTH - PADDING * 2) / w, (HEIGHT - PADDING * 2) / h);
-      const offX = PADDING + (WIDTH - PADDING * 2 - w * scale) / 2 - minX * scale;
-      const offY = PADDING + (HEIGHT - PADDING * 2 - h * scale) / 2 - minY * scale;
-      mapRef.current = { scale, offX, offY };
+      const transform = fitTransform(
+        nodes.map((n) => ({ x: n.x!, y: n.y! })),
+        WIDTH,
+        HEIGHT,
+        PADDING
+      )!;
+      mapRef.current = transform;
 
       for (const n of nodes) {
         ctx.globalAlpha = n.ghost ? 0.4 : 0.85;
         ctx.fillStyle = colorForType(n.type, types);
         ctx.beginPath();
-        ctx.arc(n.x! * scale + offX, n.y! * scale + offY, 1.6, 0, 2 * Math.PI);
+        ctx.arc(n.x! * transform.scale + transform.offX, n.y! * transform.scale + transform.offY, 1.6, 0, 2 * Math.PI);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -58,16 +55,10 @@ export function Minimap({ data, types, fgRef }: Props) {
       if (fg && container) {
         const tl = fg.screen2GraphCoords(0, 0);
         const br = fg.screen2GraphCoords(container.clientWidth, container.clientHeight);
-        // Clamp to the canvas: when zoomed out past the node bbox (e.g. on first load, before
-        // any click has zoomed in), the raw rect falls entirely outside the small minimap and
-        // would draw nothing — clamping makes that read as "the whole graph is in view" instead.
-        const rx1 = Math.max(0, Math.min(WIDTH, tl.x * scale + offX));
-        const ry1 = Math.max(0, Math.min(HEIGHT, tl.y * scale + offY));
-        const rx2 = Math.max(0, Math.min(WIDTH, br.x * scale + offX));
-        const ry2 = Math.max(0, Math.min(HEIGHT, br.y * scale + offY));
+        const rect = clampedViewportRect(tl, br, transform, WIDTH, HEIGHT);
         ctx.strokeStyle = "#fff";
         ctx.lineWidth = 1;
-        ctx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1);
+        ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
       }
     };
 
@@ -82,8 +73,7 @@ export function Minimap({ data, types, fgRef }: Props) {
     const fg = fgRef.current;
     if (!canvas || !map || !fg) return;
     const rect = canvas.getBoundingClientRect();
-    const gx = (clientX - rect.left - map.offX) / map.scale;
-    const gy = (clientY - rect.top - map.offY) / map.scale;
+    const { x: gx, y: gy } = minimapToGraphCoords(clientX - rect.left, clientY - rect.top, map);
     fg.centerAt(gx, gy, 0);
   };
 

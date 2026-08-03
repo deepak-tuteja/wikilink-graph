@@ -13,8 +13,10 @@ const ROOT = path.resolve(__dirname, "..");
 const WIKI_DIR = path.resolve(ROOT, process.env.WIKI_DIR || "examples/demo-wiki");
 const DEBOUNCE_MS = 300;
 
-function isInsideWikiDir(file) {
-  const rel = path.relative(WIKI_DIR, file);
+// wikiDir defaults to the module-level WIKI_DIR (resolved from process.env at import time); the
+// param exists so this pure check can be unit-tested independent of the environment.
+export function isInsideWikiDir(file, wikiDir = WIKI_DIR) {
+  const rel = path.relative(wikiDir, file);
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 

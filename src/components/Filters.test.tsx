@@ -27,13 +27,54 @@ function baseProps() {
     excludedNodes: [] as GraphNode[],
     hiddenNodes: new Set<string>(),
     onToggleNode: vi.fn(),
+    ghostNodes: [] as GraphNode[],
+    onOpenGhost: vi.fn(),
     tags: [] as string[],
     activeTags: new Set<string>(),
     onToggleTag: vi.fn(),
     showTagEdges: false,
     onToggleTagEdges: vi.fn(),
+    stats: { pages: 0, ghosts: 0, orphans: 0 },
   };
 }
+
+describe("Filters — mobile drawer toggle (M4)", () => {
+  it("panel starts closed (no 'open' class) and the toggle opens/closes it", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Filters {...baseProps()} />);
+    const panel = container.querySelector(".filters")!;
+    expect(panel).not.toHaveClass("open");
+
+    await user.click(screen.getByRole("button", { name: "Show filters" }));
+    expect(panel).toHaveClass("open");
+    expect(screen.getByRole("button", { name: "Hide filters" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Hide filters" }));
+    expect(panel).not.toHaveClass("open");
+  });
+
+  it("clicking the backdrop closes the drawer", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Filters {...baseProps()} />);
+    await user.click(screen.getByRole("button", { name: "Show filters" }));
+    expect(container.querySelector(".filters")).toHaveClass("open");
+
+    await user.click(container.querySelector(".filters-backdrop")!);
+    expect(container.querySelector(".filters")).not.toHaveClass("open");
+  });
+});
+
+describe("Filters — stats readout", () => {
+  it("renders the pages/ghosts/orphans counts, singular when 1", () => {
+    render(<Filters {...baseProps()} stats={{ pages: 1, ghosts: 2, orphans: 0 }} />);
+    expect(screen.getByText("1 page, 2 ghosts, 0 orphans")).toBeInTheDocument();
+  });
+
+  it("pluralizes when counts are not 1", () => {
+    render(<Filters {...baseProps()} stats={{ pages: 3, ghosts: 1, orphans: 5 }} />);
+    expect(screen.getByText("3 pages, 1 ghost, 5 orphans")).toBeInTheDocument();
+  });
+});
 
 describe("Filters — types", () => {
   it("renders a checkbox per type, checked when not hidden", () => {
@@ -72,6 +113,23 @@ describe("Filters — hubs (excluded nodes)", () => {
     expect(checkbox).toBeChecked();
     await user.click(checkbox);
     expect(onToggleNode).toHaveBeenCalledWith("hub");
+  });
+});
+
+describe("Filters — ghosts panel (M6)", () => {
+  it("does not render the Ghosts section when there are no ghost nodes", () => {
+    render(<Filters {...baseProps()} />);
+    expect(screen.queryByText("Ghosts")).not.toBeInTheDocument();
+  });
+
+  it("renders a row per ghost node and calls onOpenGhost with the clicked node's id", async () => {
+    const user = userEvent.setup();
+    const onOpenGhost = vi.fn();
+    const ghost = node({ id: "missing-page", label: "Missing Page", type: "ghost", ghost: true });
+    render(<Filters {...baseProps()} ghostNodes={[ghost]} onOpenGhost={onOpenGhost} />);
+    expect(screen.getByText("Ghosts")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Missing Page" }));
+    expect(onOpenGhost).toHaveBeenCalledWith("missing-page");
   });
 });
 

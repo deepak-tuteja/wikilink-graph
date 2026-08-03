@@ -1,0 +1,5 @@
+{
+  "exclude": ["archive-hub"],
+  "hiddenTypes": ["notes"],
+  "hiddenTags": ["draft"]
+}

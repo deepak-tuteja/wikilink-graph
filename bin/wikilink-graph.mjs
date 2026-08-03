@@ -187,7 +187,6 @@ async function cmdStart(args) {
   if (!hasMd) warn(`warning: no .md files directly in ${wikiDir} (the parser also recurses subfolders)`);
 
   const port = Number(args.port) || DEFAULT_PORT;
-  const exclude = args.exclude ?? DEFAULT_EXCLUDE;
   const watch = !!args.watch && !args.build;
   if (args.watch && args.build) warn("warning: --watch is ignored with --build (dist/ stays a frozen snapshot)");
 
@@ -203,11 +202,15 @@ async function cmdStart(args) {
     if (r.status !== 0) die("npm install failed");
   }
 
+  // WIKI_EXCLUDE is only set here when --exclude was explicitly passed, so parse-wiki.mjs's own
+  // precedence (CLI flag > env var > config file > built-in default, M9) can fall through to a
+  // directly-exported WIKI_EXCLUDE, then the wiki's own .wikilink-graph.json, when this flag is
+  // omitted — always forcing it here would silently defeat both of those.
   const env = {
     ...process.env,
     WIKI_DIR: wikiDir,
-    WIKI_EXCLUDE: exclude,
     PORT: String(port),
+    ...(args.exclude !== undefined ? { WIKI_EXCLUDE: args.exclude } : {}),
     ...(watch ? { WIKI_WATCH: "1" } : {}),
   };
 

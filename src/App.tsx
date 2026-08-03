@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { Graph } from "./components/Graph";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Graph, type GraphHandle } from "./components/Graph";
 import { Filters } from "./components/Filters";
+import { ListView } from "./components/ListView";
 import { Toolbar } from "./components/Toolbar";
 import { PageView } from "./components/PageView";
+import { Onboarding } from "./components/Onboarding";
 import type { GraphData } from "./lib/graph";
 import { endpointIds } from "./lib/graph";
 import { loadViews, saveViews, type SavedView } from "./lib/views";
 import { loadTheme, saveTheme, type Theme } from "./lib/theme";
+import { hasSeenOnboarding, markOnboardingSeen } from "./lib/onboarding";
+import { filterStateFromSearch, searchForFilterState } from "./lib/filterUrl";
+import { downloadDataUrl, pngFilename } from "./lib/exportPng";
 
 // The hash encodes the full breadcrumb trail: #/page/<a>/<b>/<c>.
 // The last segment is the page on screen; the rest are the path taken to reach it,
@@ -27,11 +32,21 @@ export function App() {
   const [trail, setTrail] = useState<string[]>(trailFromHash);
   const route = trail.length ? trail[trail.length - 1] : null;
 
-  // filter state
-  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
-  const [hiddenNodes, setHiddenNodes] = useState<Set<string>>(new Set());
-  const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
-  const [showTagEdges, setShowTagEdges] = useState(false);
+  // filter state (M7) — seeded from the URL's query string if it carries an override, so a
+  // pasted link reproduces the same filtered view; `urlFilterState` is captured once at mount
+  // (the query string only ever changes via our own sync effect below, never externally).
+  // hiddenTypes/hiddenNodes start empty here regardless — `new Set(undefined)` is just an empty
+  // set — and are filled from the loaded data's config-driven defaults (M9) in the fetch
+  // `.then` below, once `d.meta` actually exists to read them from.
+  const [urlFilterState] = useState(() => filterStateFromSearch(window.location.search));
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(
+    new Set(urlFilterState.hiddenTypes)
+  );
+  const [hiddenNodes, setHiddenNodes] = useState<Set<string>>(
+    new Set(urlFilterState.hiddenNodes ?? [])
+  );
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set(urlFilterState.activeTags));
+  const [showTagEdges, setShowTagEdges] = useState(urlFilterState.showTagEdges ?? false);
   const [search, setSearch] = useState("");
 
   // saved views
@@ -43,6 +58,28 @@ export function App() {
     document.documentElement.setAttribute("data-theme", theme);
     saveTheme(theme);
   }, [theme]);
+
+  // onboarding overlay — shown once per browser (localStorage-flagged), reopenable via
+  // Toolbar's "?" button
+  const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding());
+
+  // accessible list-view fallback (M8) — swaps the force-directed canvas for a navigable,
+  // labeled list of the same visible node set. Off by default (graph is the primary view).
+  const [listView, setListView] = useState(false);
+
+  // PNG export (M10) — only meaningful in the canvas (graph) view; there's no canvas to snapshot
+  // in list view.
+  const graphRef = useRef<GraphHandle>(null);
+  const exportPng = () => {
+    const dataUrl = graphRef.current?.exportPNG();
+    if (!dataUrl) return;
+    downloadDataUrl(dataUrl, pngFilename(wikiName));
+  };
+
+  const closeOnboarding = () => {
+    markOnboardingSeen();
+    setShowOnboarding(false);
+  };
 
   // Keyboard nav (#24): `graphSelected` is the graph's own selection ring, distinct from `route`
   // (the open reader page) — it persists after the reader closes so arrow-key cycling has
@@ -69,7 +106,15 @@ export function App() {
       })
       .then((d: GraphData) => {
         setData(d);
-        setHiddenNodes(new Set(d.nodes.filter((n) => n.excluded).map((n) => n.id)));
+        // M9: a config-file default only applies when the URL doesn't already carry its own
+        // override for that field — a pasted link's filter state always wins.
+        if (urlFilterState.hiddenTypes === undefined) {
+          setHiddenTypes(new Set(d.meta?.defaultHiddenTypes ?? []));
+        }
+        if (urlFilterState.hiddenNodes === undefined) {
+          const excludedIds = d.nodes.filter((n) => n.excluded).map((n) => n.id);
+          setHiddenNodes(new Set([...excludedIds, ...(d.meta?.defaultHiddenNodes ?? [])]));
+        }
       })
       .catch((e) => {
         setError(
@@ -79,6 +124,40 @@ export function App() {
         );
       });
   }, [retryCount]);
+
+  // Derived from meta.wikiDir's basename — shared by the document-title effect (M2) and the PNG
+  // export filename (M10), so both disambiguate/label by the same wiki name.
+  const wikiName = useMemo(
+    () => data?.meta?.wikiDir?.replace(/[\\/]+$/, "").split(/[\\/]/).pop(),
+    [data]
+  );
+
+  // document title (M2) — the open page's label in the reader, else the wiki's own name (also
+  // disambiguates multiple running instances' browser tabs)
+  useEffect(() => {
+    if (!data) return;
+    if (route) {
+      document.title = data.nodes.find((n) => n.id === route)?.label ?? route;
+      return;
+    }
+    document.title = wikiName ? `wikilink-graph — ${wikiName}` : "wikilink-graph";
+  }, [data, route, wikiName]);
+
+  // URL sync (M7) — mirrors the current filter state into the query string on every change, via
+  // `replaceState` (not `pushState`) so filtering doesn't spam browser history the way page
+  // navigation does. Waits for `data` so it never overwrites the URL's own initial state before
+  // the excluded-nodes default (or the URL override) has been applied.
+  useEffect(() => {
+    if (!data) return;
+    const qs = searchForFilterState({
+      hiddenTypes: [...hiddenTypes],
+      hiddenNodes: [...hiddenNodes],
+      activeTags: [...activeTags],
+      showTagEdges,
+    });
+    const url = window.location.pathname + qs + window.location.hash;
+    history.replaceState(history.state, "", url);
+  }, [data, hiddenTypes, hiddenNodes, activeTags, showTagEdges]);
 
   const types = useMemo(
     () =>
@@ -131,11 +210,37 @@ export function App() {
     };
   }, [data, hiddenTypes, hiddenNodes, activeTags, showTagEdges]);
 
-  // search highlight set (over the currently visible nodes)
+  // live stats readout (M1) — computed over the currently visible subgraph, so filtering
+  // updates it. "orphan" = a visible page with no visible link edges (tag edges don't count,
+  // matching how `degree`/node radius is computed).
+  const stats = useMemo(() => {
+    if (!visible) return { pages: 0, ghosts: 0, orphans: 0 };
+    const linked = new Set<string>();
+    for (const l of visible.links) {
+      if (l.kind !== "link") continue;
+      const [a, b] = endpointIds(l);
+      linked.add(a);
+      linked.add(b);
+    }
+    const pages = visible.nodes.filter((n) => !n.ghost);
+    const ghosts = visible.nodes.filter((n) => n.ghost);
+    const orphans = pages.filter((n) => !linked.has(n.id));
+    return { pages: pages.length, ghosts: ghosts.length, orphans: orphans.length };
+  }, [visible]);
+
+  // search highlight set (over the currently visible nodes) — matches a node's label or any of
+  // its tags (M6), so e.g. searching "draft" finds pages tagged `draft` even if that word never
+  // appears in their title.
   const searchIds = useMemo<Set<string> | null>(() => {
     const q = search.trim().toLowerCase();
     if (!q || !visible) return null;
-    return new Set(visible.nodes.filter((n) => n.label.toLowerCase().includes(q)).map((n) => n.id));
+    return new Set(
+      visible.nodes
+        .filter(
+          (n) => n.label.toLowerCase().includes(q) || n.tags.some((t) => t.toLowerCase().includes(q))
+        )
+        .map((n) => n.id)
+    );
   }, [search, visible]);
 
   const toggleSet =
@@ -251,15 +356,20 @@ export function App() {
 
   return (
     <div className="app">
-      <Graph
-        data={visible}
-        types={types}
-        neighbors={neighbors}
-        selected={cycleCursor ?? graphSelected}
-        searchIds={searchIds}
-        theme={theme}
-        onSelect={openPage}
-      />
+      {listView ? (
+        <ListView nodes={visible.nodes} onOpen={openPage} />
+      ) : (
+        <Graph
+          ref={graphRef}
+          data={visible}
+          types={types}
+          neighbors={neighbors}
+          selected={cycleCursor ?? graphSelected}
+          searchIds={searchIds}
+          theme={theme}
+          onSelect={openPage}
+        />
+      )}
       <Toolbar
         search={search}
         onSearch={setSearch}
@@ -271,6 +381,10 @@ export function App() {
         onDeleteView={deleteView}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        onShowHelp={() => setShowOnboarding(true)}
+        listView={listView}
+        onToggleListView={() => setListView((v) => !v)}
+        onExportPng={exportPng}
       />
       <Filters
         types={types}
@@ -279,18 +393,22 @@ export function App() {
         excludedNodes={excludedNodes}
         hiddenNodes={hiddenNodes}
         onToggleNode={toggleSet(setHiddenNodes)}
+        ghostNodes={visible.nodes.filter((n) => n.ghost)}
+        onOpenGhost={openPage}
         tags={allTags}
         activeTags={activeTags}
         onToggleTag={toggleSet(setActiveTags)}
         showTagEdges={showTagEdges}
         onToggleTagEdges={() => setShowTagEdges((v) => !v)}
+        stats={stats}
       />
+      {showOnboarding && <Onboarding onClose={closeOnboarding} />}
       {route && (
         <PageView
           node={activeNode}
           slug={route}
           types={types}
-          exists={data.nodes.some((n) => n.id === route)}
+          exists={data.nodes.some((n) => n.id === route && !n.ghost)}
           wikiDir={data.meta?.wikiDir}
           crumbs={crumbs}
           onCrumb={gotoCrumb}

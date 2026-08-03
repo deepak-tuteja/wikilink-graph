@@ -31,11 +31,12 @@ function stopIfRunning() {
   }
 }
 
-function start(port, wiki = "examples/demo-wiki") {
-  return execFileSync("node", [CLI, "start", "--wiki", wiki, "--port", String(port)], {
-    cwd: ROOT,
-    stdio: "pipe",
-  });
+function start(port, wiki = "examples/demo-wiki", extraArgs = []) {
+  return execFileSync(
+    "node",
+    [CLI, "start", "--wiki", wiki, "--port", String(port), ...extraArgs],
+    { cwd: ROOT, stdio: "pipe" }
+  );
 }
 
 async function waitFor200(url, { retries = 30, delayMs = 500 } = {}) {
@@ -133,6 +134,24 @@ describe("wikilink-graph CLI", () => {
     const res = await fetch(`http://localhost:${PORT2}`);
     expect(res.ok).toBe(true);
   }, 60_000);
+
+  it("start without --exclude lets the wiki's .wikilink-graph.json exclude-list apply (M9 precedence)", async () => {
+    start(PORT, "examples/config-wiki");
+    await waitFor200(`http://localhost:${PORT}`);
+
+    const graph = await (await fetch(`http://localhost:${PORT}/graph.json`)).json();
+    const hub = graph.nodes.find((n) => n.id === "archive-hub");
+    expect(hub.excluded).toBe(true);
+  }, 30_000);
+
+  it("start --exclude overrides the config file's exclude-list (CLI flag beats config, M9 precedence)", async () => {
+    start(PORT, "examples/config-wiki", ["--exclude", ""]);
+    await waitFor200(`http://localhost:${PORT}`);
+
+    const graph = await (await fetch(`http://localhost:${PORT}/graph.json`)).json();
+    const hub = graph.nodes.find((n) => n.id === "archive-hub");
+    expect(hub.excluded).toBe(false);
+  }, 30_000);
 
   it("a port already held by something else fails start cleanly (strictPort) with no stray state", async () => {
     const holder = net.createServer();
