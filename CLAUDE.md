@@ -80,13 +80,33 @@ this workspace's wiki, while staying reusable for any wiki.
 
 `bin/wikilink-graph.mjs` (exposed as the `wikilink-graph` bin, also `npm run cli -- …`) is the easy way to
 start/stop the viewer. The wiki path is a **mandatory** argument on `start` — pointing it at a wiki
-is the whole point — and it serves in the background, tracking the process in `.wikilink-graph.pid` so
-`stop` cleanly kills the whole tree and frees the port.
+is the whole point — and it serves in the background.
+
+**Global install:** since `--wiki` resolves against `process.cwd()` (not the tool's own checkout)
+and `ROOT` is always resolved from `__dirname`/`import.meta.url` (which Node follows through a
+symlink by default), the CLI works as a true global command via a plain symlink — no npm registry,
+no sudo:
 
 ```bash
-node bin/wikilink-graph.mjs start --wiki examples/demo-wiki      # parse + serve (live dev) in background
-node bin/wikilink-graph.mjs status                               # running? where? which wiki?
-node bin/wikilink-graph.mjs stop                                 # kill + free the port
+ln -s "$(pwd)/bin/wikilink-graph.mjs" ~/.local/bin/wikilink-graph
+```
+
+(`npm link` was tried first but requires writing to `/usr/local/lib/node_modules`, which needs
+root on a machine where npm's global prefix isn't user-writable — the symlink sidesteps that
+entirely and is the documented install path, not a fallback.)
+
+**Multiple instances:** each running instance is tracked by its own state file under
+`.wikilink-graph/<port>.{json,log}` (not a single shared pid file), so different wikis can run
+concurrently on different ports. `status`/`stop` act on the single instance when there's exactly
+one, list all of them when there are several, or target one via `--port <n>` (`stop` also takes
+`--all`).
+
+```bash
+wikilink-graph start --wiki examples/demo-wiki      # parse + serve (live dev) in background
+wikilink-graph status                               # what's running? where? which wiki(s)?
+wikilink-graph stop                                 # stop the one instance, or list if there's >1
+wikilink-graph stop --port 5200                     # stop just that instance
+wikilink-graph stop --all                           # stop everything
 ```
 
 Start options: `-w/--wiki <path>` (required, resolved against CWD), `-p/--port <n>` (default `5179`),
@@ -94,8 +114,11 @@ Start options: `-w/--wiki <path>` (required, resolved against CWD), `-p/--port <
 serve that via `vite preview` instead of the live dev server), `--watch` (dev mode only — re-parses
 the wiki and full-reloads the browser whenever a `.md` file under `--wiki` changes, via a Vite plugin
 on Vite's own `server.watcher`; ignored with `--build`). It auto-runs `npm install` on first
-use, refuses to double-start, and writes server logs to `.wikilink-graph.log`. Both runtime files are
-gitignored.
+use, refuses to double-start on a port already in use, and writes each instance's logs to
+`.wikilink-graph/<port>.log`. `vite.config.ts` sets `strictPort: true` so a taken port fails loudly
+instead of Vite silently drifting to another one; `cmdStart` also waits briefly and confirms the
+spawned process is still alive before reporting success, so a fast-crashing server (e.g. that port
+race) is never mis-reported as running. The whole `.wikilink-graph/` directory is gitignored.
 
 ## Raw npm scripts (lower level)
 
@@ -105,5 +128,4 @@ gitignored.
 - `npm run parse` — just regenerate `public/graph.json` + `public/wiki/`.
 - `npm run stop` — alias for `wikilink-graph stop`.
 
-Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-graph.pid`, `.wikilink-graph.log`)
-are gitignored.
+Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-graph/`) are gitignored.

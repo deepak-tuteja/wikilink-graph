@@ -8,6 +8,8 @@ export default defineConfig({
   // WIKI_WATCH=1 (set by `wikilink-graph start --watch`) re-parses the wiki + full-reloads on
   // .md changes. Off by default so plain `npm run dev` behavior is unchanged.
   plugins: [react(), ...(process.env.WIKI_WATCH === "1" ? [watchWikiPlugin()] : [])],
-  server: { port: PORT, host: true },
-  preview: { port: PORT, host: true },
+  // strictPort: a taken port fails loudly instead of Vite silently binding to the next free
+  // one — the CLI reports (and tracks) the port it was asked for, so a silent drift would lie.
+  server: { port: PORT, host: true, strictPort: true },
+  preview: { port: PORT, host: true, strictPort: true },
 });

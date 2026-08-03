@@ -11,11 +11,8 @@ architecture reference is [`CLAUDE.md`](./CLAUDE.md).
 
 Zero-config, `npm run dev`/`build` and the CLI both show the sample wiki in
 [`examples/demo-wiki/`](./examples/demo-wiki) — enough pages to exercise every feature on a fresh
-clone. Point `WIKI_DIR` (or the CLI `--wiki` flag) at any other folder to graph your own wiki instead:
-
-```bash
-node bin/wikilink-graph.mjs start --wiki examples/demo-wiki
-```
+clone. Point `WIKI_DIR` (or the CLI `--wiki` flag) at any other folder to graph your own wiki
+instead — see Quick start below.
 
 ![Graph view of the demo wiki: type-clustered nodes, ghost links dashed, minimap bottom-right](./docs/screenshots/graph-view.png)
 *The force-directed graph view — dark theme, demo wiki loaded.*
@@ -25,15 +22,25 @@ node bin/wikilink-graph.mjs start --wiki examples/demo-wiki
 
 ## Quick start (CLI — recommended)
 
-`bin/wikilink-graph.mjs` (exposed as the `wikilink-graph` bin) is the easy way to run it. The wiki path is a
-**required** argument on `start`; it serves in the background and tracks the process so `stop`
-cleanly frees the port.
+Clone once, then install the `wikilink-graph` command globally as a symlink — no npm registry,
+no sudo, works with a private repo:
 
 ```bash
-node bin/wikilink-graph.mjs start --wiki examples/demo-wiki      # parse + serve (live) in background
-node bin/wikilink-graph.mjs status                               # running? where? which wiki?
-node bin/wikilink-graph.mjs stop                                 # kill + free the port
+git clone https://github.com/deepak-tuteja/wikilink-graph.git
+cd wikilink-graph && npm install
+ln -s "$(pwd)/bin/wikilink-graph.mjs" ~/.local/bin/wikilink-graph   # requires ~/.local/bin on $PATH
 ```
+
+From then on, `wikilink-graph` works from **any directory**, against **any wiki folder**:
+
+```bash
+wikilink-graph start --wiki ~/notes/wiki      # parse + serve (live) in background
+wikilink-graph status                         # what's running? where? which wiki?
+wikilink-graph stop                           # stop it, freeing the port
+```
+
+Multiple wikis can run at once, each on its own `--port` — `status`/`stop` list them all when
+more than one is running, or target one with `--port <n>` (`stop` also takes `--all`).
 
 `start` options:
 
@@ -45,8 +52,14 @@ node bin/wikilink-graph.mjs stop                                 # kill + free t
 | `--build` | off | Build a self-contained `dist/` and serve that (`vite preview`) instead of live dev |
 | `--watch` | off | Dev mode only: re-parse + full-reload whenever a `.md` file under `--wiki` changes (ignored with `--build`) |
 
-It auto-runs `npm install` on first use, refuses to double-start, and writes logs to
-`.wikilink-graph.log` (pid in `.wikilink-graph.pid`).
+It auto-runs `npm install` on first use, refuses to double-start on a port already in use, and
+tracks each running instance under `.wikilink-graph/<port>.{json,log}` inside the clone.
+
+**Without installing globally** — from inside the clone, the demo wiki works with zero setup:
+
+```bash
+node bin/wikilink-graph.mjs start --wiki examples/demo-wiki
+```
 
 ## Raw npm scripts (lower level)
 
@@ -85,8 +98,8 @@ npm run stop      # alias for `wikilink-graph stop`
 
 ## Notes
 
-- Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-graph.pid`,
-  `.wikilink-graph.log`) are gitignored and regenerable.
+- Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-graph/`) are
+  gitignored and regenerable.
 - Saved views are stored in `localStorage` (`wikilink-graph.views`).
 
 ## License

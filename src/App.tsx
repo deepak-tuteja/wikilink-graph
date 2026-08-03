@@ -57,9 +57,13 @@ export function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  const [retryCount, setRetryCount] = useState(0);
+
   useEffect(() => {
+    setError(null);
     fetch("graph.json")
       .then((r) => {
+        if (r.status === 404) throw new Error("not-found");
         if (!r.ok) throw new Error(`graph.json ${r.status}`);
         return r.json();
       })
@@ -67,8 +71,14 @@ export function App() {
         setData(d);
         setHiddenNodes(new Set(d.nodes.filter((n) => n.excluded).map((n) => n.id)));
       })
-      .catch((e) => setError(String(e)));
-  }, []);
+      .catch((e) => {
+        setError(
+          e instanceof Error && e.message === "not-found"
+            ? "graph.json wasn't found — has the wiki been parsed? Run the parser or restart the server."
+            : "Couldn't load graph.json — is the server still running?"
+        );
+      });
+  }, [retryCount]);
 
   const types = useMemo(
     () =>
@@ -223,7 +233,13 @@ export function App() {
     saveViews(next);
   }
 
-  if (error) return <div className="msg">Failed to load: {error}</div>;
+  if (error)
+    return (
+      <div className="msg error-msg">
+        <p>{error}</p>
+        <button onClick={() => setRetryCount((n) => n + 1)}>Retry</button>
+      </div>
+    );
   if (!data || !visible) return <div className="msg">Loading graph…</div>;
 
   const excludedNodes = data.nodes.filter((n) => n.excluded);

@@ -87,6 +87,17 @@ body {
 .app { position: relative; height: 100vh; overflow: hidden; }
 .graph { position: absolute; inset: 0; }
 .msg { padding: 2rem; color: var(--fg-muted); }
+.error-msg { display: flex; flex-direction: column; align-items: flex-start; gap: 0.8rem; }
+.error-msg button {
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--prose-fg);
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.error-msg button:hover { background: var(--hover-bg); }
 
 /* ---- Filters panel (left) ---- */
 .filters {
