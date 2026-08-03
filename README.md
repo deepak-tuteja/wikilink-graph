@@ -9,6 +9,9 @@ those apps, while staying reusable for any wiki folder.
 Built with **Vite + React + `react-force-graph-2d` + `react-markdown`**. Default port **5179**. The
 architecture reference is [`CLAUDE.md`](./CLAUDE.md).
 
+**[Live demo](https://deepak-tuteja.github.io/wikilink-graph/)** — the graph above, graphing this
+repo's own `examples/demo-wiki` (which doubles as the tool's own docs).
+
 Zero-config, `npm run dev`/`build` and the CLI both show the sample wiki in
 [`examples/demo-wiki/`](./examples/demo-wiki) — enough pages to exercise every feature on a fresh
 clone. Point `WIKI_DIR` (or the CLI `--wiki` flag) at any other folder to graph your own wiki
