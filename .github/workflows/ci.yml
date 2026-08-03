@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run parse        # smoke: parser runs clean against the default fixture
+      - run: npm run build        # smoke: production build doesn't break
+      - run: node bin/wikilink-graph.mjs start --wiki examples/demo-wiki --port 5199
+      - run: curl --retry 10 --retry-connrefused --retry-delay 1 -sf http://localhost:5199 > /dev/null
+      - run: node bin/wikilink-graph.mjs stop

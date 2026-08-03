@@ -1,0 +1,42 @@
+{
+  "name": "wikilink-graph",
+  "private": false,
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Standalone force-directed graph viewer for a [[slug]]-linked markdown wiki",
+  "type": "module",
+  "bin": {
+    "wikilink-graph": "bin/wikilink-graph.mjs"
+  },
+  "scripts": {
+    "cli": "node bin/wikilink-graph.mjs",
+    "stop": "node bin/wikilink-graph.mjs stop",
+    "parse": "node scripts/parse-wiki.mjs",
+    "gen-feature-wiki": "node scripts/gen-feature-wiki.mjs",
+    "dev": "npm run parse && vite",
+    "build": "npm run parse && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cli": "vitest run --config vitest.cli.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-force-graph-2d": "^1.25.5",
+    "react-markdown": "^9.0.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^4.1.10"
+  }
+}
