@@ -24,15 +24,20 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sigma/node-border": "^3.0.0",
+    "d3-force": "^3.0.0",
+    "graphology": "^0.26.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-force-graph-2d": "^1.25.5",
-    "react-markdown": "^9.0.1"
+    "react-markdown": "^9.0.1",
+    "sigma": "^3.0.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/d3-force": "^3.0.10",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

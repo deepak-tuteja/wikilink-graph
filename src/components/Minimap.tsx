@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type Sigma from "sigma";
 import type { GraphData } from "../lib/graph";
 import { colorForType } from "../lib/graph";
 import { fitTransform, clampedViewportRect, minimapToGraphCoords } from "../lib/minimap";
@@ -10,14 +11,14 @@ const PADDING = 10;
 interface Props {
   data: GraphData;
   types: string[];
-  fgRef: React.MutableRefObject<any>;
+  sigmaRef: React.MutableRefObject<Sigma | null>;
 }
 
 // Overview canvas + viewport rectangle (#25). Redraws on a low-frequency timer rather than
 // wiring onZoom/onEngineTick — node positions (mutated in place by d3-force) and the main
-// canvas's pan/zoom transform both need polling anyway, and a 120ms tick is imperceptible for a
+// view's pan/zoom transform both need polling anyway, and a 120ms tick is imperceptible for a
 // wiki-sized graph while staying cheap.
-export function Minimap({ data, types, fgRef }: Props) {
+export function Minimap({ data, types, sigmaRef }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Last-drawn graph<->minimap mapping, read back by the pan handlers below.
   const mapRef = useRef<{ scale: number; offX: number; offY: number } | null>(null);
@@ -50,11 +51,11 @@ export function Minimap({ data, types, fgRef }: Props) {
       }
       ctx.globalAlpha = 1;
 
-      const fg = fgRef.current;
+      const sigma = sigmaRef.current;
       const container = canvas.parentElement;
-      if (fg && container) {
-        const tl = fg.screen2GraphCoords(0, 0);
-        const br = fg.screen2GraphCoords(container.clientWidth, container.clientHeight);
+      if (sigma && container) {
+        const tl = sigma.viewportToGraph({ x: 0, y: 0 });
+        const br = sigma.viewportToGraph({ x: container.clientWidth, y: container.clientHeight });
         const rect = clampedViewportRect(tl, br, transform, WIDTH, HEIGHT);
         ctx.strokeStyle = "#fff";
         ctx.lineWidth = 1;
@@ -65,16 +66,24 @@ export function Minimap({ data, types, fgRef }: Props) {
     draw();
     const id = window.setInterval(draw, 120);
     return () => window.clearInterval(id);
-  }, [data, types, fgRef]);
+  }, [data, types, sigmaRef]);
 
   const panTo = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const map = mapRef.current;
-    const fg = fgRef.current;
-    if (!canvas || !map || !fg) return;
+    const sigma = sigmaRef.current;
+    if (!canvas || !map || !sigma) return;
     const rect = canvas.getBoundingClientRect();
     const { x: gx, y: gy } = minimapToGraphCoords(clientX - rect.left, clientY - rect.top, map);
-    fg.centerAt(gx, gy, 0);
+
+    // Pan-to-point via a viewport round-trip (same recipe as Graph.tsx's zoom-to-fit): converts
+    // the target raw-graph point into Sigma's internal "framed" camera-coordinate space without
+    // needing its private normalization function.
+    const viewportPt = sigma.graphToViewport({ x: gx, y: gy });
+    const framedPt = sigma.viewportToFramedGraph(viewportPt);
+    const camera = sigma.getCamera();
+    const cur = camera.getState();
+    camera.setState({ x: framedPt.x, y: framedPt.y, ratio: cur.ratio, angle: cur.angle });
   };
 
   return (
