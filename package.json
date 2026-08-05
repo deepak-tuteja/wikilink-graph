@@ -14,6 +14,7 @@
     "pack-install": "node scripts/pack-install.mjs",
     "parse": "node scripts/parse-wiki.mjs",
     "gen-feature-wiki": "node scripts/gen-feature-wiki.mjs",
+    "gen-synthetic-wiki": "node scripts/gen-synthetic-wiki.mjs",
     "dev": "npm run parse && vite",
     "build": "npm run parse && vite build",
     "preview": "vite preview",

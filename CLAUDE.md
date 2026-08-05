@@ -179,7 +179,13 @@ is the full local gate; CI (`.github/workflows/ci.yml`) runs all four on push/PR
   (`isLit` in `lib/graph.ts`; `fitTransform`/`clampedViewportRect`/`minimapToGraphCoords` in
   `lib/minimap.ts`) and covered there. Visual/canvas behavior is verified live (dev server +
   Playwright) instead — not part of the automated suite.
-- `scripts/pack-install.mjs` and `scripts/gen-feature-wiki.mjs` are one-shot ops/dev-fixture
-  scripts that shell out to real system state (a global `npm install -g`, an external source wiki
-  dir) — deliberately left uncovered rather than mocked, same convention as this workspace's other
-  install-workflow scripts (e.g. testFlow-tests' `refresh-tflw`).
+- `scripts/pack-install.mjs`, `scripts/gen-feature-wiki.mjs`, and `scripts/gen-synthetic-wiki.mjs`
+  are one-shot ops/dev-fixture scripts that shell out to real system state (a global
+  `npm install -g`, an external source wiki dir, or — for the synthetic generator — bulk `fs`
+  writes at whatever scale is requested) — deliberately left uncovered rather than mocked, same
+  convention as this workspace's other install-workflow scripts (e.g. testFlow-tests'
+  `refresh-tflw`). Its output is verified by running it and parsing the result, not by a
+  permanent test: `node scripts/gen-synthetic-wiki.mjs && WIKI_DIR=examples/synthetic-wiki npm
+  run parse` should report ~1000 real pages, ~100 ghost nodes, and a visibly power-law-ish
+  degree distribution (a handful of hub pages, most pages at low single-digit degree) —
+  confirming the preferential-attachment link model is doing its job.

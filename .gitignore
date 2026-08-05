@@ -4,6 +4,7 @@ public/graph.json
 public/wiki
 .wikilink-graph/
 examples/feature-wiki
+examples/synthetic-wiki
 PROGRESS.md
 /PLAN.md
 /PLAN_*.md
