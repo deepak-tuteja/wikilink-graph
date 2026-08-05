@@ -122,9 +122,17 @@ export function Graph({
       simulationDecay: 3000,
       simulationGravity: 0.6,
       simulationCenter: 0.3,
-      simulationRepulsion: 1.0,
-      simulationLinkSpring: 1,
-      simulationLinkDistance: 18,
+      // Retune (2026-08-06, short pass) — repulsion/gravity/center are all isotropic (pull-to-
+      // center or push-apart uniformly in every direction), so with link spring weak relative to
+      // them the real link topology barely perturbs that isotropic equilibrium and everything
+      // settles into one round, roughly-uniform-density blob regardless of actual structure.
+      // Lowering repulsion and raising link spring/distance shifts more of the settled shape's
+      // shape to come from the actual wiring (connected clusters pull tighter, unlinked/ghost
+      // nodes drift comparatively further out) without touching gravity/center themselves, which
+      // stay at the values already tuned to prevent the earlier whole-graph translation drift bug.
+      simulationRepulsion: 0.6,
+      simulationLinkSpring: 2,
+      simulationLinkDistance: 12,
       // `simulationGravity`/`simulationCenter` are both driven live by the breathing tick below
       // (setConfigPartial), so these two are just the resting/floor values it oscillates up from.
       //
