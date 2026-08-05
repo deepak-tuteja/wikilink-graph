@@ -66,6 +66,7 @@ export const Graph = forwardRef<GraphHandle, Props>(function Graph(
   const simRef = useRef<Simulation<GraphNode, GraphLink> | null>(null);
   const nodeByIdRef = useRef<Map<string, GraphNode>>(new Map());
   const hoverRef = useRef<string | null>(null);
+  const prevHoverRef = useRef<string | null>(null);
   const onSelectRef = useRef(onSelect);
   const [hover, setHover] = useState<string | null>(null);
 
@@ -203,10 +204,22 @@ export const Graph = forwardRef<GraphHandle, Props>(function Graph(
 
   // Obsidian-style hover: the hovered node repels its surroundings (neighbors drift outward), then
   // they ease back once the cursor leaves. The charge force itself already reads hoverRef live —
-  // this effect's job is just to reheat the simulation so the change is visible.
+  // this effect's job is to reheat the simulation so the change is visible, and to pin the hovered
+  // node's own x/y (fx/fy) so *it* doesn't also get pushed away by the neighbors it's repelling —
+  // otherwise the node the cursor is on drifts out from under the pointer and becomes unclickable.
   useEffect(() => {
     hoverRef.current = hover;
-    simRef.current?.alpha(1).restart();
+    const prev = prevHoverRef.current;
+    if (prev && prev !== hover) {
+      const p = nodeByIdRef.current.get(prev);
+      if (p) { p.fx = null; p.fy = null; }
+    }
+    if (hover) {
+      const n = nodeByIdRef.current.get(hover);
+      if (n) { n.fx = n.x; n.fy = n.y; }
+    }
+    prevHoverRef.current = hover;
+    simRef.current?.alpha(0.3).restart();
   }, [hover]);
 
   // Structural sync: add/remove graphology nodes+edges and reseed the d3-force simulation

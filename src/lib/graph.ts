@@ -13,6 +13,10 @@ export interface GraphNode {
   y?: number;
   vx?: number;
   vy?: number;
+  // d3-force pin — set while a node is hovered so it can't drift out from under the cursor
+  // (Graph.tsx), even though its neighbors still get repelled outward around it.
+  fx?: number | null;
+  fy?: number | null;
 }
 
 export interface GraphLink {
