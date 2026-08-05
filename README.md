@@ -6,19 +6,22 @@ folder into a node/edge graph, renders it with a force-directed layout, and lets
 read its rendered markdown in-app — so you can graph a `[[wikilink]]` folder without needing one of
 those apps, while staying reusable for any wiki folder.
 
-Built with **Vite + React + `react-force-graph-2d` + `react-markdown`**. Default port **5179**. The
-architecture reference is [`CLAUDE.md`](./CLAUDE.md).
+Built with **Vite + React + `@cosmos.gl/graph` (GPU/WebGL rendering) + `react-markdown`**. Default
+port **5179**. The architecture reference is [`CLAUDE.md`](./CLAUDE.md).
 
-**[Live demo](https://deepak-tuteja.github.io/wikilink-graph/)** — the graph above, graphing this
-repo's own `examples/demo-wiki` (which doubles as the tool's own docs).
+**[Live demo](https://deepak-tuteja.github.io/wikilink-graph/)** — a dense ~1100-node synthetic
+wiki ([`examples/synthetic-wiki/`](./examples/synthetic-wiki), generator:
+[`scripts/gen-synthetic-wiki.mjs`](./scripts/gen-synthetic-wiki.mjs)), chosen because it's large
+enough to actually show off the GPU-rendered clustering/motion — the real workspace wiki this tool
+was built for tops out around 40 nodes, too small to make the point.
 
-Zero-config, `npm run dev`/`build` and the CLI both show the sample wiki in
-[`examples/demo-wiki/`](./examples/demo-wiki) — enough pages to exercise every feature on a fresh
-clone. Point `WIKI_DIR` (or the CLI `--wiki` flag) at any other folder to graph your own wiki
-instead — see Quick start below.
+Zero-config, `npm run dev`/`build` and the CLI all show the smaller sample wiki in
+[`examples/demo-wiki/`](./examples/demo-wiki) instead — enough pages to exercise every feature on a
+fresh clone, and it doubles as the tool's own docs. Point `WIKI_DIR` (or the CLI `--wiki` flag) at
+any other folder to graph your own wiki instead — see Quick start below.
 
-![Graph view of the demo wiki: type-clustered nodes, ghost links dashed, minimap bottom-right](./docs/screenshots/graph-view.png)
-*The force-directed graph view — dark theme, demo wiki loaded.*
+![Graph view of the dense synthetic demo wiki: type-clustered nodes, ghost links dashed](./docs/screenshots/graph-view.png)
+*The force-directed graph view — dark theme, dense synthetic wiki loaded.*
 
 ![In-app reader open on a demo wiki page, with breadcrumbs and an "Open in editor" link](./docs/screenshots/reader-view.png)
 *Click a node to read its page in-app.*
@@ -132,11 +135,12 @@ node types/tagged pages start hidden in the viewer (all still togglable). See
    reader can fetch raw markdown, and records the absolute source dir for the "Open in editor" link.
    Output: `public/graph.json` (`{ meta, nodes, links }`).
 2. **Front end** (`src/`): `App.tsx` loads `graph.json` and owns routing/filter state;
-   `components/Graph.tsx` renders the `ForceGraph2D` (color by type, radius by degree, hover/select
-   highlights neighbors); `components/PageView.tsx` is a full-page reader overlay (renders markdown,
-   rewrites `[[slug]]` into in-app links, "Open in editor" → `vscode://`); `Toolbar.tsx` (search +
-   saved views) and `Filters.tsx` (type toggles, hub toggles, tag cloud). Routing is hash-based
-   (`#/page/<slug>`), so reader URLs are shareable deep links.
+   `components/Graph.tsx` renders the graph via `@cosmos.gl/graph`'s GPU-accelerated WebGL
+   simulation + renderer (color by type, radius by degree, hover/select highlights neighbors);
+   `components/PageView.tsx` is a full-page reader overlay (renders markdown, rewrites `[[slug]]`
+   into in-app links, "Open in editor" → `vscode://`); `Toolbar.tsx` (search + saved views) and
+   `Filters.tsx` (type toggles, hub toggles, tag cloud). Routing is hash-based (`#/page/<slug>`),
+   so reader URLs are shareable deep links.
 
 ## Notes
 
@@ -148,8 +152,8 @@ node types/tagged pages start hidden in the viewer (all still togglable). See
 
 [MIT](./LICENSE) — © 2026 Deepak Tuteja. Free to use, modify, and redistribute.
 
-Built on the open-source [`react-force-graph-2d`](https://github.com/vasturiano/react-force-graph)
-and [`react-markdown`](https://github.com/remarkjs/react-markdown) (both MIT).
+Built on the open-source [`@cosmos.gl/graph`](https://github.com/cosmosgl/graph) and
+[`react-markdown`](https://github.com/remarkjs/react-markdown) (both MIT).
 
 > **Not affiliated with, endorsed by, or sponsored by Obsidian (Dynalink Technologies), Roam, or
 > Logseq.** Those names are used only nominatively, to describe the kind of graph-view experience

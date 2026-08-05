@@ -101,7 +101,7 @@ export function PageView({ node, slug, types, exists, wikiDir, crumbs, onCrumb, 
             </a>
           )}
           <span className="crumb">
-            <span className="swatch" style={{ background: colorForType(type, types) }} />
+            <span className="swatch" style={{ background: colorForType(type) }} />
             {type}
           </span>
         </span>

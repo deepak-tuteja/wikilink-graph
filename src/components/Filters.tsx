@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Ghost, Check, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { GraphNode } from "../lib/graph";
 import { colorForType } from "../lib/graph";
 
@@ -23,6 +24,9 @@ interface Props {
   showTagEdges: boolean;
   onToggleTagEdges: () => void;
   stats: Stats;
+  screensaverMode: boolean;
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
 }
 
 export function Filters({
@@ -40,24 +44,52 @@ export function Filters({
   showTagEdges,
   onToggleTagEdges,
   stats,
+  screensaverMode,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: Props) {
   // Below the mobile breakpoint (M4), the panel becomes an off-canvas drawer behind this
   // toggle; above it, CSS keeps the toggle hidden and the panel always visible regardless of
   // `open`, so this state is simply inert (and harmless) on desktop widths.
   const [open, setOpen] = useState(false);
 
+  const panelClass = [
+    "filters",
+    open && "open",
+    sidebarCollapsed && "collapsed",
+    screensaverMode && "chrome-hidden",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <>
       <button
-        className="filters-toggle"
+        className={screensaverMode ? "filters-toggle chrome-hidden" : "filters-toggle"}
         aria-label={open ? "Hide filters" : "Show filters"}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        {open ? "✕" : "☰"} Filters
+        {open ? <PanelLeftClose size={15} aria-hidden="true" /> : <PanelLeftOpen size={15} aria-hidden="true" />} Filters
       </button>
       {open && <div className="filters-backdrop" onClick={() => setOpen(false)} />}
-      <div className={open ? "filters open" : "filters"}>
+      {/* Desktop-only collapse toggle (M10a) — distinct control from the mobile drawer toggle
+          above; CSS shows exactly one of the two depending on viewport width. */}
+      <button
+        className={[
+          "sidebar-collapse-toggle",
+          sidebarCollapsed && "collapsed",
+          screensaverMode && "chrome-hidden",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        aria-expanded={!sidebarCollapsed}
+        onClick={onToggleSidebar}
+      >
+        {sidebarCollapsed ? <PanelLeftOpen size={15} aria-hidden="true" /> : <PanelLeftClose size={15} aria-hidden="true" />}
+      </button>
+      <div className={panelClass}>
         <p className="stats">
           {stats.pages} page{stats.pages === 1 ? "" : "s"}, {stats.ghosts} ghost{stats.ghosts === 1 ? "" : "s"}, {stats.orphans} orphan{stats.orphans === 1 ? "" : "s"}
         </p>
@@ -71,7 +103,7 @@ export function Filters({
                   checked={!hiddenTypes.has(t)}
                   onChange={() => onToggleType(t)}
                 />
-                <span className="swatch" style={{ background: colorForType(t, types) }} />
+                <span className="swatch" style={{ background: colorForType(t) }} />
                 {t}
               </label>
             </li>
@@ -109,7 +141,7 @@ export function Filters({
               {ghostNodes.map((n) => (
                 <li key={n.id}>
                   <button className="ghost-link" onClick={() => onOpenGhost(n.id)}>
-                    {n.label}
+                    <Ghost size={12} aria-hidden="true" /> {n.label}
                   </button>
                 </li>
               ))}
@@ -127,7 +159,7 @@ export function Filters({
                   className={activeTags.has(t) ? "tag on" : "tag"}
                   onClick={() => onToggleTag(t)}
                 >
-                  {t}
+                  {activeTags.has(t) && <Check size={11} aria-hidden="true" />} {t}
                 </button>
               ))}
             </div>

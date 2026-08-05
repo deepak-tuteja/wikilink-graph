@@ -1,7 +1,16 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { colorForType, nodeRadius, colorForStatus, linkId, endpointIds, forceCluster, isLit } from "./graph";
-import type { GraphNode, GraphLink } from "./graph";
+import {
+  colorForType,
+  nodeRadius,
+  colorForStatus,
+  linkId,
+  endpointIds,
+  isLit,
+  localize,
+  classifyGraphClick,
+} from "./graph";
+import type { GraphNode, GraphLink, GraphData } from "./graph";
 
 function node(overrides: Partial<GraphNode> = {}): GraphNode {
   return {
@@ -19,21 +28,19 @@ function node(overrides: Partial<GraphNode> = {}): GraphNode {
 }
 
 describe("colorForType", () => {
-  const types = ["root", "concepts", "guides"];
-
-  it("assigns a stable color by index into the given types list", () => {
-    expect(colorForType("root", types)).toBe(colorForType("root", types));
-    expect(colorForType("concepts", types)).not.toBe(colorForType("root", types));
+  it("assigns a stable, deterministic color per type name", () => {
+    expect(colorForType("root")).toBe(colorForType("root"));
+    expect(colorForType("concepts")).not.toBe(colorForType("root"));
   });
 
-  it("always returns the ghost color for type 'ghost', regardless of the types list", () => {
-    expect(colorForType("ghost", types)).toBe("#555");
+  it("is independent of discovery order — a type's color never depends on what else exists", () => {
+    // unlike the old indexOf-based assignment, calling it standalone vs. alongside other types
+    // must yield the exact same color, since only the type's own name feeds the hash.
+    expect(colorForType("guides")).toBe(colorForType("guides"));
   });
 
-  it("wraps around the palette when there are more types than colors", () => {
-    const manyTypes = Array.from({ length: 10 }, (_, i) => `t${i}`);
-    // palette has 7 entries, so index 7 should wrap to the same color as index 0
-    expect(colorForType("t7", manyTypes)).toBe(colorForType("t0", manyTypes));
+  it("always returns the ghost color for type 'ghost'", () => {
+    expect(colorForType("ghost")).toBe("#555");
   });
 });
 
@@ -53,8 +60,8 @@ describe("nodeRadius", () => {
 
 describe("colorForStatus", () => {
   it("maps known status words to their fixed colors", () => {
-    expect(colorForStatus("active")).toBe("#63e6be");
-    expect(colorForStatus("stable")).toBe("#6ea8fe");
+    expect(colorForStatus("active")).toBe("#00e5ff");
+    expect(colorForStatus("stable")).toBe("#7c4dff");
   });
 
   it("is case-insensitive", () => {
@@ -123,26 +130,83 @@ describe("isLit", () => {
   });
 });
 
-describe("forceCluster", () => {
-  it("initializes with an empty node array and ticking doesn't throw", () => {
-    const force = forceCluster();
-    force.initialize([]);
-    expect(() => force(1)).not.toThrow();
+describe("localize", () => {
+  // a - b - c, and a - d (a's the hub); e is disconnected entirely.
+  const data: GraphData = {
+    nodes: [
+      node({ id: "a", label: "A" }),
+      node({ id: "b", label: "B" }),
+      node({ id: "c", label: "C" }),
+      node({ id: "d", label: "D" }),
+      node({ id: "e", label: "E" }),
+    ],
+    links: [
+      { source: "a", target: "b", kind: "link" },
+      { source: "b", target: "c", kind: "link" },
+      { source: "a", target: "d", kind: "link" },
+    ],
+  };
+  const neighbors = new Map<string, Set<string>>([
+    ["a", new Set(["b", "d"])],
+    ["b", new Set(["a", "c"])],
+    ["c", new Set(["b"])],
+    ["d", new Set(["a"])],
+  ]);
+
+  it("returns the data unchanged when nothing is selected (no-op)", () => {
+    expect(localize(data, null, neighbors)).toBe(data);
   });
 
-  it("ticking doesn't throw with a single positioned node", () => {
-    const force = forceCluster();
-    force.initialize([node({ id: "a", type: "root", x: 0, y: 0 })]);
-    expect(() => force(1)).not.toThrow();
+  it("narrows to the selected node plus its direct neighbors", () => {
+    const result = localize(data, "a", neighbors);
+    expect(result.nodes.map((n) => n.id).sort()).toEqual(["a", "b", "d"]);
   });
 
-  it("ticking doesn't throw with multiple same-type positioned nodes", () => {
-    const force = forceCluster();
-    force.initialize([
-      node({ id: "a", type: "root", x: 0, y: 0 }),
-      node({ id: "b", type: "root", x: 10, y: 10 }),
-      node({ id: "c", type: "concepts", x: -5, y: 5 }),
-    ]);
-    expect(() => force(0.5)).not.toThrow();
+  it("keeps only links between nodes that survived the narrowing", () => {
+    const result = localize(data, "a", neighbors);
+    // a-b and a-d survive; b-c is dropped since c isn't in the local set.
+    expect(result.links.map(linkId).sort()).toEqual(["a b", "a d"]);
+  });
+
+  it("2-hop nodes are excluded — depth is fixed at 1", () => {
+    const result = localize(data, "a", neighbors);
+    expect(result.nodes.some((n) => n.id === "c")).toBe(false);
+  });
+
+  it("a selected node with no neighbors keeps just itself, and no links", () => {
+    const result = localize(data, "e", neighbors);
+    expect(result.nodes.map((n) => n.id)).toEqual(["e"]);
+    expect(result.links).toEqual([]);
+  });
+
+  it("composes with pre-filtering — a neighbor already removed from `data` upstream stays absent", () => {
+    // Simulate an existing hidden-type/tag filter having already dropped "d" from the input
+    // graph, even though the (unfiltered) neighbors map still lists it as a's neighbor.
+    const preFiltered: GraphData = {
+      nodes: data.nodes.filter((n) => n.id !== "d"),
+      links: data.links.filter((l) => linkId(l) !== "a d"),
+    };
+    const result = localize(preFiltered, "a", neighbors);
+    expect(result.nodes.map((n) => n.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("preserves the input's meta", () => {
+    const withMeta: GraphData = { ...data, meta: { wikiDir: "/x" } };
+    const result = localize(withMeta, "a", neighbors);
+    expect(result.meta).toEqual({ wikiDir: "/x" });
+  });
+});
+
+describe("classifyGraphClick", () => {
+  it("selects a node when nothing is currently selected", () => {
+    expect(classifyGraphClick("a", null)).toBe("a");
+  });
+
+  it("clears the selection when the clicked node is already selected", () => {
+    expect(classifyGraphClick("a", "a")).toBeNull();
+  });
+
+  it("replaces the selection with whatever other node was clicked", () => {
+    expect(classifyGraphClick("b", "a")).toBe("b");
   });
 });

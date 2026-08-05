@@ -1,19 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { forwardRef } from "react";
 import { App } from "./App";
 
-// ForceGraph2D needs a real <canvas> 2D context, which jsdom doesn't implement — stub it out
-// for the tests below that render past the loading/error states into the graph view. Stubbed as
-// a forwardRef (not a plain function) so App's graphRef (M10) attaches without a console warning;
-// exportPNG resolves to null here since there's no real canvas to snapshot under jsdom.
+// Graph.tsx drives a real WebGL canvas via @cosmos.gl/graph, which jsdom doesn't implement —
+// stub it out for the tests below that render past the loading/error states into the graph view.
 vi.mock("./components/Graph", () => ({
-  Graph: forwardRef((_props, ref) => {
-    if (typeof ref === "function") ref({ exportPNG: () => null });
-    else if (ref) ref.current = { exportPNG: () => null };
-    return null;
-  }),
+  Graph: () => null,
 }));
 
 describe("App — graph.json load failure", () => {
@@ -294,6 +287,77 @@ describe("App — accessible list-view fallback (M8)", () => {
   });
 });
 
+const graphDataForLocalToggle = {
+  meta: { wikiDir: "/home/user/my-wiki" },
+  nodes: [
+    { id: "a", label: "Alpha", type: "root", file: "a.md", tags: [], status: null, ghost: false, degree: 1, excluded: false },
+    { id: "b", label: "Beta", type: "root", file: "b.md", tags: [], status: null, ghost: false, degree: 2, excluded: false },
+    { id: "c", label: "Gamma", type: "root", file: "c.md", tags: [], status: null, ghost: false, degree: 1, excluded: false },
+    { id: "d", label: "Delta", type: "root", file: "d.md", tags: [], status: null, ghost: false, degree: 0, excluded: false },
+  ],
+  // a - b - c chain; d is unrelated (not a's neighbor).
+  links: [
+    { source: "a", target: "b", kind: "link" },
+    { source: "b", target: "c", kind: "link" },
+  ],
+};
+
+describe("App — local/global view toggle (M6)", () => {
+  beforeEach(() => {
+    history.pushState(null, "", "/");
+    localStorage.setItem("wikilink-graph.onboarding-seen", "1");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(graphDataForLocalToggle) } as Response)
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    history.pushState(null, "", "/");
+  });
+
+  it("disables the Local view button when nothing is selected", async () => {
+    render(<App />);
+    await waitFor(() => screen.getByLabelText("Search nodes"));
+    expect(screen.getByRole("button", { name: /Local view/ })).toBeDisabled();
+  });
+
+  it("narrows to the selected node's direct neighbors when enabled, and restores the full graph when toggled back off", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => screen.getByLabelText("Search nodes"));
+
+    // Switch to list view and select "Alpha" so it becomes the graph selection.
+    await user.click(screen.getByRole("button", { name: /List view/ }));
+    await user.click(screen.getByRole("button", { name: /Alpha/ }));
+    // Selecting opens the reader; back out of it (graphSelected persists across that, per App.tsx).
+    await user.click(screen.getByTitle("Back to the graph"));
+
+    const localButton = screen.getByRole("button", { name: /Local view/ });
+    expect(localButton).not.toBeDisabled();
+
+    await user.click(localButton);
+    expect(localButton).toHaveAttribute("aria-pressed", "true");
+
+    // Local (1-hop): Alpha + its direct neighbor Beta stay, Gamma (2-hop) and Delta (unrelated) drop.
+    expect(screen.getByRole("button", { name: /Alpha/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Beta/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Gamma/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delta/ })).not.toBeInTheDocument();
+
+    await user.click(localButton);
+    expect(localButton).toHaveAttribute("aria-pressed", "false");
+
+    // Back to global: the full (filtered) graph is restored.
+    expect(screen.getByRole("button", { name: /Gamma/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Delta/ })).toBeInTheDocument();
+  });
+});
+
 const graphDataWithConfigDefaults = {
   meta: {
     wikiDir: "/home/user/my-wiki",
@@ -348,38 +412,5 @@ describe("App — config-file default hidden types/nodes (M9)", () => {
       expect(screen.getByRole("checkbox", { name: /concepts/ })).toBeChecked();
     });
     expect(screen.getByRole("checkbox", { name: /root/ })).toBeChecked();
-  });
-});
-
-describe("App — PNG export (M10)", () => {
-  beforeEach(() => {
-    localStorage.setItem("wikilink-graph.onboarding-seen", "1");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(graphData) } as Response)
-    );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    localStorage.clear();
-  });
-
-  it("shows the Export PNG button in graph view, and hides it after switching to list view", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await waitFor(() => screen.getByRole("button", { name: /PNG/ }));
-
-    await user.click(screen.getByRole("button", { name: /List view/ }));
-    expect(screen.queryByRole("button", { name: /PNG/ })).not.toBeInTheDocument();
-  });
-
-  it("doesn't throw when clicked (the mocked Graph has no real canvas to snapshot under jsdom)", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await waitFor(() => screen.getByRole("button", { name: /PNG/ }));
-
-    await user.click(screen.getByRole("button", { name: /PNG/ }));
-    expect(screen.getByRole("button", { name: /PNG/ })).toBeInTheDocument();
   });
 });

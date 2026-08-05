@@ -8,15 +8,16 @@ export interface GraphNode {
   ghost: boolean;
   degree: number;
   excluded: boolean;
-  // injected by react-force-graph (d3-force) at runtime
+  // Seeded once (on first appearance) by Graph.tsx's position-push effect via `??=`, then kept in
+  // sync with cosmos.gl's own live GPU-simulated position by that same effect's *cleanup*: cosmos
+  // itself never writes positions back onto these JS objects mid-simulation, but the cleanup reads
+  // `graph.getPointPositions()` for the outgoing node set right before a `data` swap would
+  // otherwise discard the mapping, and writes the live x/y back here (PLAN_VISUAL_UPGRADE.md
+  // decision 24). So x/y are the node's last-known-live position as of the most recent `data`
+  // change, not a frozen mount-time seed — still just a JS-side mirror updated at swap boundaries,
+  // not a value cosmos reads from continuously.
   x?: number;
   y?: number;
-  vx?: number;
-  vy?: number;
-  // d3-force pin — set while a node is hovered so it can't drift out from under the cursor
-  // (Graph.tsx), even though its neighbors still get repelled outward around it.
-  fx?: number | null;
-  fy?: number | null;
 }
 
 export interface GraphLink {
@@ -37,22 +38,36 @@ export interface GraphData {
   links: GraphLink[];
 }
 
-// Stable, distinct palette assigned per node type.
+// Curated categorical (muted, Tableau/Observable-10-ish) palette assigned per node type
+// (PLAN_VISUAL_UPGRADE.md decisions 39/40) — replaces the earlier bright-primaries set, which
+// read as garish/cartoonish. Assignment is a hash of the type name itself (see `colorForType`),
+// not the type's position in a discovered-order list, so a given type name always maps to the
+// same color regardless of what else exists in the wiki or in what order types were found.
 const PALETTE = [
-  "#6ea8fe", // blue
-  "#63e6be", // teal
-  "#ffd43b", // yellow
-  "#ff8787", // red
-  "#da77f2", // purple
-  "#ffa94d", // orange
-  "#74c0fc", // light blue
+  "#5b7c99", // steel blue
+  "#c9922a", // amber
+  "#7a8c5a", // moss green
+  "#9b7a94", // mauve
+  "#a8543f", // brick red
+  "#5c8a86", // teal-gray
+  "#b8a06a", // soft gold
+  "#8c7a6b", // taupe
 ];
 const GHOST_COLOR = "#555";
 
-export function colorForType(type: string, types: string[]): string {
+// djb2-style string hash — deterministic, cheap, good-enough distribution for a handful of
+// palette slots (not used for anything security-sensitive).
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+export function colorForType(type: string): string {
   if (type === "ghost") return GHOST_COLOR;
-  const i = types.indexOf(type);
-  return PALETTE[i % PALETTE.length] ?? "#999";
+  return PALETTE[hashString(type) % PALETTE.length];
 }
 
 export function nodeRadius(node: GraphNode): number {
@@ -61,45 +76,20 @@ export function nodeRadius(node: GraphNode): number {
 
 // workspaceWiki's status vocab (active/stable/parked/idea) gets a fixed color each; any other
 // status word (this tool stays generic — see PLAN.md decision #18) falls back to a neutral ring
-// so it's still visibly "has a status" without inventing a color per word.
+// so it's still visibly "has a status" without inventing a color per word. Deliberately a
+// separate, more saturated family from the muted type `PALETTE` above (decision 41) — a status
+// ring and a node's fill color encode two different facts and shouldn't be visually confusable.
 const STATUS_COLORS: Record<string, string> = {
-  active: "#63e6be",
-  stable: "#6ea8fe",
-  parked: "#ffd43b",
-  idea: "#da77f2",
+  active: "#00e5ff",
+  stable: "#7c4dff",
+  parked: "#ffab00",
+  idea: "#ff4081",
 };
 const STATUS_FALLBACK = "#aab3c0";
 
 export function colorForStatus(status: string | null): string | null {
   if (!status) return null;
   return STATUS_COLORS[status.toLowerCase()] ?? STATUS_FALLBACK;
-}
-
-// d3-force custom force: nudges same-type nodes toward their shared centroid each tick, so
-// clusters emerge without pinning nodes to fixed positions. Ghosts cluster on their own (type
-// "ghost"), keeping them visually distinct from the real pages that link to them.
-export function forceCluster(strength = 0.4) {
-  let nodes: GraphNode[] = [];
-  function force(alpha: number) {
-    const centroids = new Map<string, { x: number; y: number; count: number }>();
-    for (const n of nodes) {
-      if (n.x == null || n.y == null) continue;
-      let c = centroids.get(n.type);
-      if (!c) { c = { x: 0, y: 0, count: 0 }; centroids.set(n.type, c); }
-      c.x += n.x; c.y += n.y; c.count++;
-    }
-    for (const c of centroids.values()) { c.x /= c.count; c.y /= c.count; }
-    const k = strength * alpha;
-    for (const n of nodes) {
-      if (n.x == null || n.y == null) continue;
-      const c = centroids.get(n.type);
-      if (!c || c.count < 2) continue;
-      n.vx = (n.vx ?? 0) - (n.x - c.x) * k;
-      n.vy = (n.vy ?? 0) - (n.y - c.y) * k;
-    }
-  }
-  force.initialize = (ns: GraphNode[]) => { nodes = ns; };
-  return force;
 }
 
 // Graph.tsx's dimming rule, extracted for unit-testability (the canvas painting itself isn't —
@@ -118,6 +108,42 @@ export function isLit(
     return searchIds.has(id);
   }
   return !focus || id === focus || (neighbors.get(focus)?.has(id) ?? false);
+}
+
+// Local/global toggle (M6, PLAN_VISUAL_UPGRADE.md decisions 8/9/10) — "local" mode narrows an
+// already-filtered graph down to just the selected node plus its direct (fixed 1-hop) neighbors.
+// `data` is expected to be the graph *after* the existing type/node/tag filters are applied, and
+// `neighbors` the same adjacency map App.tsx builds for hover/selection highlighting (respects
+// the tag-edge toggle, ignores the type/node/tag filters) — so composing with those filters is
+// just "narrow what's already visible a bit further" (decision 10): a neighbor already excluded
+// by an existing filter was never in `data.nodes` to begin with, and never reappears here. No
+// selection is a no-op (returns `data` unchanged) — callers decide what "local with nothing
+// selected" should mean in the UI (App.tsx disables the toggle in that case).
+export function localize(
+  data: GraphData,
+  selected: string | null,
+  neighbors: Map<string, Set<string>>
+): GraphData {
+  if (!selected) return data;
+  const keep = new Set([selected, ...(neighbors.get(selected) ?? [])]);
+  const nodes = data.nodes.filter((n) => keep.has(n.id));
+  const keptIds = new Set(nodes.map((n) => n.id));
+  const links = data.links.filter((l) => {
+    const [a, b] = endpointIds(l);
+    return keptIds.has(a) && keptIds.has(b);
+  });
+  return { meta: data.meta, nodes, links };
+}
+
+// Single/double-click split (M10g, PLAN_VISUAL_UPGRADE.md decision 50) — replaces decision 25's
+// select-vs-open model entirely. Once App.tsx's click-arrival timer (stateful, so it lives there
+// rather than here) has decided a click is a genuine single click (not the first half of a
+// double-click), this is the pure part: toggle that exact node's selection — clicking the
+// already-selected node clears it, clicking any other node replaces the selection with it.
+// Double-click (opens the node) and neighbor-lighting no longer factor into the click decision at
+// all; a lit neighbor is just visual context now, not a second way to trigger navigation.
+export function classifyGraphClick(id: string, currentSelected: string | null): string | null {
+  return id === currentSelected ? null : id;
 }
 
 export function linkId(l: GraphLink): string {

@@ -21,10 +21,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - run: npm ci
+      - run: npm run gen-synthetic-wiki
       - run: npm run build
         env:
           GH_PAGES: "1"
           WIKI_EXCLUDE: synthesis
+          WIKI_DIR: examples/synthetic-wiki
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
 

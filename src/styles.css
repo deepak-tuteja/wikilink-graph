@@ -88,6 +88,16 @@ body {
 .graph { position: absolute; inset: 0; }
 .msg { padding: 2rem; color: var(--fg-muted); }
 
+/* ---- Screensaver mode (M9 rescoped, decisions 30-32) ---- */
+/* A single compositing filter on the whole app wrapper takes nodes/edges (WebGL canvas) and any
+   still-fading chrome to monochrome together, with no changes to Graph.tsx's own color pipeline. */
+.app.screensaver { filter: grayscale(1); transition: filter 600ms ease; }
+.app:not(.screensaver) { transition: filter 600ms ease; }
+.toolbar, .filters, .filters-toggle {
+  transition: opacity 400ms ease;
+}
+.chrome-hidden { opacity: 0; pointer-events: none; }
+
 /* ---- List view (M8, accessible fallback for the canvas) ---- */
 .list-view { position: absolute; inset: 0; overflow-y: auto; padding: 5.5rem 1rem 1.5rem; }
 .list-view-empty { color: var(--fg-muted); text-align: center; margin-top: 2rem; }
@@ -131,27 +141,70 @@ body {
 .filters .stats { margin: 0.2rem 0 0.5rem; font-size: 0.75rem; color: var(--fg-muted); }
 .filters .hint { text-transform: none; color: var(--fg-dim); font-weight: 400; }
 .filters ul { list-style: none; margin: 0; padding: 0; }
-.filters li { display: flex; align-items: center; gap: 0.4rem; padding: 0.1rem 0; }
-.filters label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
-.filters .ghost-row { color: var(--fg-muted); }
+.filters li { display: flex; align-items: center; gap: 0.4rem; padding: 0.05rem 0; }
+.filters label {
+  display: flex; align-items: center; gap: 0.45rem; cursor: pointer;
+  width: 100%; padding: 0.25rem 0.35rem; border-radius: 6px;
+  transition: background 120ms ease;
+}
+.filters label:hover { background: var(--hover-bg); }
+.filters .ghost-row { color: var(--fg-muted); padding: 0.25rem 0.35rem; }
+
+/* Modern custom checkbox (M10c) — a small rounded box with a CSS-drawn checkmark on :checked,
+   replacing the browser's native control so it matches the rest of the redesign's border/radius
+   language instead of looking like a leftover default form element. */
+.filters input[type="checkbox"], .tag-edges-toggle input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+}
+.filters input[type="checkbox"]:checked, .tag-edges-toggle input[type="checkbox"]:checked {
+  background: var(--link-color);
+  border-color: var(--link-color);
+}
+.filters input[type="checkbox"]:checked::after, .tag-edges-toggle input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--panel-bg-solid);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .swatch.ghost { border: 1px dashed #777; background: transparent; }
 .ghost-list { max-height: 140px; overflow-y: auto; }
 .ghost-link {
+  display: flex; align-items: center; gap: 0.4rem;
   width: 100%; text-align: left; background: none; border: none; color: var(--fg-muted);
-  font: inherit; font-style: italic; padding: 0.15rem 0; cursor: pointer;
+  font: inherit; font-style: italic; padding: 0.3rem 0.35rem; border-radius: 6px; cursor: pointer;
 }
-.ghost-link:hover { color: var(--fg); text-decoration: underline; }
-.tag-cloud { display: flex; flex-wrap: wrap; gap: 0.3rem; max-width: 200px; }
+.ghost-link:hover { color: var(--fg); background: var(--hover-bg); }
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 0.35rem; max-width: 200px; }
 .tag {
+  display: inline-flex; align-items: center; gap: 0.25rem;
   background: var(--tag-bg); border: 1px solid var(--tag-border); color: var(--tag-fg);
-  font-size: 0.72rem; padding: 0.12rem 0.5rem; border-radius: 999px; cursor: pointer;
+  font-size: 0.72rem; padding: 0.18rem 0.55rem; border-radius: 999px; cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
 }
+.tag:hover { border-color: var(--fg-muted); }
 .tag.on { background: #2a4a44; border-color: #63e6be; color: #9af0d6; }
 .tag-edges-toggle {
-  display: flex; align-items: center; gap: 0.4rem; cursor: pointer;
-  margin-top: 0.5rem; color: var(--tag-fg);
+  display: flex; align-items: center; gap: 0.45rem; cursor: pointer;
+  margin-top: 0.5rem; padding: 0.25rem 0.35rem; border-radius: 6px; color: var(--tag-fg);
+  transition: background 120ms ease;
 }
+.tag-edges-toggle:hover { background: var(--hover-bg); }
 .swatch.tag-edge {
   border: 1px dashed #c08fe8; background: transparent; width: 14px; border-radius: 0;
   border-width: 0 0 1px 0; align-self: center;
@@ -161,32 +214,127 @@ body {
 .filters-toggle { display: none; }
 .filters-backdrop { display: none; }
 
-/* ---- Top toolbar (search + saved views) ---- */
+/* ---- Desktop sidebar collapse (M10a, PLAN_VISUAL_UPGRADE.md decisions 35/36) ----
+   A separate mechanism from the mobile drawer above: the panel gets an explicit width so its
+   collapsed position (and the toggle's docked position) are both predictable, and the toggle
+   itself is a small fixed tab that stays put whether the panel is expanded or collapsed —
+   unlike the mobile toggle, it never needs to move with the panel since it isn't its sibling
+   in a drawer sense, just a docked control at the panel's expanded right edge. Hidden below the
+   mobile breakpoint, where `.filters-toggle` is the only collapse control. */
+.sidebar-collapse-toggle { display: none; }
+@media (min-width: 721px) {
+  .filters {
+    width: 260px;
+    transition: transform 220ms ease, opacity 220ms ease;
+  }
+  .filters.collapsed {
+    transform: translateX(calc(-100% - 1.6rem));
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sidebar-collapse-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 1rem;
+    left: calc(260px + 1.6rem);
+    z-index: 6;
+    width: 1.9rem;
+    height: 1.9rem;
+    background: var(--panel-bg-solid);
+    border: 1px solid var(--panel-border);
+    color: var(--fg-muted);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: left 220ms ease, opacity 400ms ease, background 150ms ease;
+  }
+  .sidebar-collapse-toggle:hover { background: var(--hover-bg); color: var(--fg); }
+  .sidebar-collapse-toggle.collapsed { left: 1rem; }
+}
+
+/* ---- Top toolbar (M10c redesign, decisions 42-46) ----
+   Four visual clusters, each a `.toolbar-group`: Search (unchanged prominence) · Views (same
+   size, visually lighter — decision 45) · Mode toggles (full-size labeled, core interaction) ·
+   Theme+Help (small icon-only utility, far edge). A wider inter-group gap than the old flat row
+   reads as real grouping rather than one undifferentiated strip of buttons. */
 .toolbar {
   position: absolute;
-  top: 1rem;
+  /* Sits below the sidebar-collapse-toggle's row (also `top: 1rem`, decision M10a) so the two
+     floating controls never occupy the same horizontal band at desktop widths. Mobile overrides
+     this separately below. */
+  top: 3.6rem;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: flex-start;
-  gap: 0.6rem;
+  gap: 1.1rem;
   z-index: 6;
 }
+
+/* M10h (decision 51's fix, found by the user 2026-08-06) — `.toolbar`'s base rule above centers
+   on `left: 50%` against the *full* viewport, blind to the 260px sidebar sitting to its left; at
+   desktop widths narrow enough that half-the-viewport still falls inside that 260px + its 1rem
+   inset, the search box overlapped the Filters panel's rows. Deliberately placed *after* the
+   base `.toolbar` rule (not inside decision 35/36's own `@media (min-width: 721px)` block above)
+   — that's exactly the cascade-order footgun M10c's own toolbar/sidebar-toggle overlap fix hit:
+   an equal-specificity rule earlier in the file always loses to a later one regardless of which
+   media query matches. Shift the centering point right by half the sidebar's total footprint
+   (`1rem` inset + `260px` width) so the toolbar centers on the *content* area (viewport minus
+   sidebar) instead — reverting to true `50%` when the sidebar is collapsed
+   (`.app.sidebar-collapsed`, threaded down from M10a's existing `sidebarCollapsed` state, which
+   `Toolbar.tsx` still doesn't need to know about directly).
+
+   Shifting alone isn't enough on its own, though: the toolbar's 4 unwrapped clusters have a
+   natural content width (~940px, measured live) wider than the *entire* content area at many
+   genuinely narrow desktop widths (721-1200px-ish), so a plain shift still overlaps — there's
+   nowhere to shift *to*. `flex-wrap` (already used at the ≤720px mobile breakpoint) plus a
+   `max-width` capped to the actual available content width lets the clusters wrap onto more than
+   one row instead, so the toolbar can never extend into the sidebar's footprint or off the
+   opposite edge regardless of how narrow the desktop window gets. */
+@media (min-width: 721px) {
+  .toolbar {
+    left: calc(50% + 0.5rem + 130px);
+    /* `width: max-content` (not just `max-width`) so the box actually prefers a single row —
+       an absolutely-positioned flex container with `flex-wrap` but no explicit `width` sizes
+       itself via a shrink-to-fit calculation based on the *containing block*, not its own
+       content, and wrapped onto 2 rows even at plenty-wide viewports where nothing needed to
+       wrap; measured live at 1600px (938px content, 1282px available) before adding this. */
+    width: max-content;
+    max-width: calc(100vw - 260px - 1.6rem - 2rem);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .app.sidebar-collapsed .toolbar {
+    left: 50%;
+    max-width: calc(100vw - 2rem);
+  }
+}
+.toolbar-group { display: flex; align-items: flex-start; gap: 0.4rem; }
+
 .search { position: relative; }
+.search-icon {
+  position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%);
+  color: var(--fg-dim); pointer-events: none;
+}
 .search input {
   width: 240px;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   color: var(--fg);
   border-radius: 8px;
-  padding: 0.45rem 1.8rem 0.45rem 0.8rem;
+  padding: 0.45rem 1.8rem 0.45rem 2rem;
   font-size: 0.85rem;
 }
 .search input:focus { outline: none; border-color: #466; }
 .search .clear {
   position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
-  background: none; border: none; color: var(--fg-muted); font-size: 1.1rem; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
 }
+.search .clear:hover { color: var(--fg); }
 .search .results {
   position: absolute; top: 110%; left: 0; right: 0;
   list-style: none; margin: 0; padding: 0.25rem;
@@ -204,29 +352,57 @@ body {
 .search .results button:hover { background: var(--hover-bg); }
 .search .results .rtype { color: var(--fg-dim); font-size: 0.7rem; text-transform: uppercase; }
 
-.views { display: flex; gap: 0.3rem; }
-.views select, .views button {
-  background: var(--input-bg);
-  border: 1px solid var(--panel-border);
-  color: var(--prose-fg);
+/* Views cluster — same footprint as the mode buttons but a visually lighter treatment (muted
+   color, faint border) since it's used less often than the mode toggles (decision 45). */
+.toolbar-views select, .views-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
   border-radius: 8px;
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.7rem;
   font-size: 0.82rem;
   cursor: pointer;
 }
-.views button:hover { background: var(--hover-bg); }
+.toolbar-views select { border-color: var(--panel-border); background: var(--input-bg); }
+.views-btn:hover { background: var(--hover-bg); border-color: var(--panel-border); color: var(--fg); }
+.views-btn-icon { padding: 0.45rem; }
 
-.theme-toggle {
+/* Mode toggles cluster — full-size labeled buttons, the core "how the graph currently displays"
+   interaction (decision 45). A pressed/active state gets a visible accent so on/off state reads
+   at a glance instead of relying on an icon swap alone. */
+.mode-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
   background: var(--input-bg);
   border: 1px solid var(--panel-border);
   color: var(--fg);
   border-radius: 8px;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.95rem;
-  line-height: 1;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.mode-btn:hover:not(:disabled) { background: var(--hover-bg); }
+.mode-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mode-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--link-color) 16%, var(--input-bg));
+  border-color: var(--link-color);
+  color: var(--fg);
+}
+
+/* Theme + Help cluster — small icon-only utility buttons at the far edge, deliberately the
+   lightest-weight controls in the toolbar (decision 45). */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--fg-muted);
+  border-radius: 8px;
+  width: 2rem;
+  height: 2rem;
   cursor: pointer;
 }
-.theme-toggle:hover { background: var(--hover-bg); }
+.icon-btn:hover { background: var(--hover-bg); color: var(--fg); }
 
 /* ---- Onboarding overlay ---- */
 .onboarding-backdrop {
@@ -294,21 +470,8 @@ body {
 }
 .onboarding-close:hover { background: var(--hover-bg); }
 
-/* ---- Minimap (bottom-right overview + viewport rect) ---- */
-.minimap {
-  position: absolute;
-  right: 1rem;
-  bottom: 1rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px var(--shadow);
-  cursor: crosshair;
-  z-index: 5;
-}
-
-/* ---- Mobile breakpoint (M4): Filters collapses to a drawer, Toolbar wraps/compacts, Minimap
-   hides. Devtools-emulation-verified, not tested on real hardware (decision #7). ---- */
+/* ---- Mobile breakpoint (M4): Filters collapses to a drawer, Toolbar wraps/compacts.
+   Devtools-emulation-verified, not tested on real hardware (decision #7). ---- */
 @media (max-width: 720px) {
   .filters-toggle {
     display: inline-flex;
@@ -359,11 +522,11 @@ body {
     transform: none;
     flex-wrap: wrap;
     justify-content: center;
+    gap: 0.5rem;
   }
+  .toolbar-search { flex: 1 1 100%; }
   .search { flex: 1 1 100%; }
   .search input { width: 100%; }
-
-  .minimap { display: none; }
 }
 
 /* open-in-editor link in the reader bar */

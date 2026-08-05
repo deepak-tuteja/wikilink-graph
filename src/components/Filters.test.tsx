@@ -35,6 +35,9 @@ function baseProps() {
     showTagEdges: false,
     onToggleTagEdges: vi.fn(),
     stats: { pages: 0, ghosts: 0, orphans: 0 },
+    screensaverMode: false,
+    sidebarCollapsed: false,
+    onToggleSidebar: vi.fn(),
   };
 }
 
@@ -61,6 +64,27 @@ describe("Filters — mobile drawer toggle (M4)", () => {
 
     await user.click(container.querySelector(".filters-backdrop")!);
     expect(container.querySelector(".filters")).not.toHaveClass("open");
+  });
+});
+
+describe("Filters — desktop sidebar collapse toggle (M10a)", () => {
+  it("reflects the expanded state and calls onToggleSidebar on click", async () => {
+    const user = userEvent.setup();
+    const onToggleSidebar = vi.fn();
+    render(<Filters {...baseProps()} sidebarCollapsed={false} onToggleSidebar={onToggleSidebar} />);
+    const button = screen.getByRole("button", { name: "Hide sidebar" });
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(button).not.toHaveClass("collapsed");
+    await user.click(button);
+    expect(onToggleSidebar).toHaveBeenCalled();
+  });
+
+  it("reflects the collapsed state via aria-expanded/class and applies 'collapsed' to the panel", () => {
+    const { container } = render(<Filters {...baseProps()} sidebarCollapsed={true} />);
+    const button = screen.getByRole("button", { name: "Show sidebar" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveClass("collapsed");
+    expect(container.querySelector(".filters")).toHaveClass("collapsed");
   });
 });
 

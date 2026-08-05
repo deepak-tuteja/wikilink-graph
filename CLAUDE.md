@@ -5,9 +5,10 @@ Parses a wiki folder into a node/edge graph and renders it with a force-directed
 a node previews the rendered markdown in-app. Built to remove the Obsidian dependency for graphing
 this workspace's wiki, while staying reusable for any wiki.
 
-**Stack:** Vite + React + `sigma`/`graphology` (WebGL rendering, M3 2026-08-05 — replaced
-`react-force-graph-2d`, still present pending M5's cutover) + `d3-force` (layout physics) +
-`react-markdown`. **Skill:** `wikilink-graph` (start/stop). **Default port:** 5179.
+**Stack:** Vite + React + `@cosmos.gl/graph` (GPU/WebGL rendering + physics, M5 2026-08-05 —
+replaced the M3 `sigma`/`graphology`/`d3-force` stack, itself a replacement for the original
+`react-force-graph-2d`) + `react-markdown`. **Skill:** `wikilink-graph` (start/stop). **Default
+port:** 5179.
 
 ## How it works
 
@@ -44,31 +45,25 @@ this workspace's wiki, while staying reusable for any wiki.
      arrow keys move `cycleCursor` through `graphSelected`'s neighbor list (wrapping, sorted),
      Enter opens the reader for whichever is highlighted (which re-anchors `graphSelected` to it),
      and Esc backs off the cycle first, then fully deselects.
-   - `components/Graph.tsx` — a persistent `graphology.Graph` + `d3-force` simulation (unchanged
-     `forceCluster`, `lib/graph.ts`, gently pulling same-type nodes toward a shared centroid each
-     tick so the layout reads as clusters-by-type) drives a `Sigma` WebGL renderer via
-     `nodeReducer`/`edgeReducer` — color-by-type, radius-by-degree. Ghost nodes render as a thick,
-     mostly-hollow `@sigma/node-border` ring (dashed-stroke doesn't map onto GPU node programs);
-     status/selection also use `@sigma/node-border`'s default thin ring. Hover/selection highlights
-     node + neighbors and dims the rest via rgba-alpha (WebGL node programs have no `globalAlpha`
-     equivalent); a `searchIds` set highlights search matches. Click navigates to `#/page/<slug>`;
-     whenever the `selected` prop changes (by click **or** keyboard cycling) an effect zoom-to-fits
-     that node + its direct neighbors, via `fitTransform` (`lib/minimap.ts`) for the scale and a
-     viewport round-trip (`graphToViewport` → `viewportToFramedGraph`) to pan without needing
-     Sigma's private normalization function. Renders `components/Minimap.tsx` as an overlay — in
-     its own DOM sibling, **not** inside Sigma's own container div, since `sigma.kill()` wipes
-     every child of whatever element it's given (`while (container.firstChild)
-     container.removeChild(...)`) and would silently delete Minimap's canvas out from under React
-     on any teardown (e.g. a StrictMode dev remount). PNG export composites Sigma's several
-     stacked canvases (edges/nodes/labels/hovers) into one — filling the theme background first
-     (Sigma's canvases are individually transparent) and calling `sigma.refresh({schedule: false})`
-     immediately before reading them, since the node/edge layers are WebGL canvases with the
-     unconfigurable default `preserveDrawingBuffer: false` and would otherwise read back blank.
-   - `components/Minimap.tsx` — small overview canvas (bottom-right) redrawn on a 120ms timer:
-     every visible node as a dot, plus the main view's current viewport as a white rect (via
-     `sigma.viewportToGraph`, clamped to the minimap's bounds so an out-of-range viewport still
-     reads as "you can see everything" instead of vanishing off-canvas). Click/drag pans the main
-     view via the same viewport round-trip pan recipe as Graph.tsx's zoom-to-fit.
+   - `components/Graph.tsx` — a persistent `@cosmos.gl/graph` `Graph` instance owns both the GPU
+     physics simulation and the WebGL rendering (no external layout library — cosmos bundles its
+     own, unlike the M3 sigma/d3-force split). Color-by-type, radius-by-degree, ghost/status/
+     selection encoded via point color + `outlinedPointIndices`/`focusedPointIndex`.
+     Hover/selection highlights node + neighbors and dims the rest via alpha on `setPointColors`;
+     a `searchIds` set highlights search matches. Clicking a node reports it via `onSelect`, but
+     the component itself is agnostic about what that click *does* — `App.tsx`'s `handleGraphClick`
+     decides, via the pure `shouldOpenOnClick`, whether it's a select-only click (highlights the
+     node + neighbors, no navigation) or an open click (navigates to `#/page/<slug>`), mirroring
+     the select-vs-open split the keyboard flow already has (arrow keys highlight, Enter opens).
+     The `selected` prop (driven by click **or** `App.tsx`'s keyboard cycling — this component is
+     engine-agnostic there, it just honors whatever id it's given) drives the outline/focus
+     styling. Cosmos's own render loop is frame-rate-coupled (advances physics once per rendered
+     frame, no deltaTime normalization), which made simulation speed browser-dependent — fixed by
+     `graph.pause()` plus a manual `setInterval` metronome driving `step()` at a fixed wall-clock
+     cadence, so physics speed no longer depends on how fast a given browser/GPU renders frames.
+     No minimap and no PNG export — both were sigma-specific (M4) and were dropped rather than
+     ported in the M5 cutover (decision 21); keyboard neighbor-cycling carried over for free since
+     it was always `App.tsx`'s own logic, not the renderer's.
    - `components/PageView.tsx` — **full-page reader overlay** (graph stays mounted behind it).
      Fetches `wiki/<file>`, renders with `react-markdown` and prose styles; rewrites `[[slug]]`
      into in-app links; "← Back to graph" + Esc; "Open in editor" → `vscode://file/<wikiDir>/<file>`.
@@ -186,13 +181,11 @@ Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-gr
 excluded from the default run — spawns real dev servers) + `npm run typecheck` + `npm run build`
 is the full local gate; CI (`.github/workflows/ci.yml`) runs all four on push/PR to `main`.
 
-- `Graph.tsx`/`Minimap.tsx` wrap `sigma`'s WebGL rendering, which jsdom can't render without a
-  real GPU context this project doesn't depend on — so the reducers/canvas painting themselves
-  aren't unit-tested (`App.test.tsx` mocks `Graph.tsx` out wholesale, same as before M3). Their
-  actual *logic* (dimming precedence, viewport-fit math, pan-coordinate conversion) is extracted
-  into plain functions (`isLit` in `lib/graph.ts`; `fitTransform`/`clampedViewportRect`/
-  `minimapToGraphCoords` in `lib/minimap.ts`) and covered there. Visual/WebGL behavior is verified
-  live (dev server + Playwright) instead — not part of the automated suite.
+- `Graph.tsx` wraps `@cosmos.gl/graph`'s WebGL rendering, which jsdom can't render without a real
+  GPU context this project doesn't depend on — so it isn't unit-tested (`App.test.tsx` mocks
+  `Graph.tsx` out wholesale). Its actual *logic* (dimming precedence) is extracted into a plain
+  function (`isLit` in `lib/graph.ts`) and covered there. Visual/WebGL behavior is verified live
+  (dev server + Playwright) instead — not part of the automated suite.
 - `scripts/pack-install.mjs`, `scripts/gen-feature-wiki.mjs`, and `scripts/gen-synthetic-wiki.mjs`
   are one-shot ops/dev-fixture scripts that shell out to real system state (a global
   `npm install -g`, an external source wiki dir, or — for the synthetic generator — bulk `fs`

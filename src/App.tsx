@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Graph, type GraphHandle } from "./components/Graph";
+import { Graph } from "./components/Graph";
 import { Filters } from "./components/Filters";
 import { ListView } from "./components/ListView";
 import { Toolbar } from "./components/Toolbar";
 import { PageView } from "./components/PageView";
 import { Onboarding } from "./components/Onboarding";
 import type { GraphData } from "./lib/graph";
-import { endpointIds } from "./lib/graph";
+import { endpointIds, localize, classifyGraphClick } from "./lib/graph";
 import { loadViews, saveViews, type SavedView } from "./lib/views";
 import { loadTheme, saveTheme, type Theme } from "./lib/theme";
+import { loadSidebarCollapsed, saveSidebarCollapsed } from "./lib/sidebar";
 import { hasSeenOnboarding, markOnboardingSeen } from "./lib/onboarding";
 import { filterStateFromSearch, searchForFilterState } from "./lib/filterUrl";
-import { downloadDataUrl, pngFilename } from "./lib/exportPng";
 
 // The hash encodes the full breadcrumb trail: #/page/<a>/<b>/<c>.
 // The last segment is the page on screen; the rest are the path taken to reach it,
@@ -59,6 +59,14 @@ export function App() {
     saveTheme(theme);
   }, [theme]);
 
+  // Desktop sidebar collapse (M10a, decisions 35/36) — distinct from Filters.tsx's own
+  // ephemeral mobile drawer `open` state (unpersisted, default-closed, mobile-only via CSS).
+  // This one persists across sessions and defaults open.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed());
+  useEffect(() => {
+    saveSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
+
   // onboarding overlay — shown once per browser (localStorage-flagged), reopenable via
   // Toolbar's "?" button
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding());
@@ -67,14 +75,48 @@ export function App() {
   // labeled list of the same visible node set. Off by default (graph is the primary view).
   const [listView, setListView] = useState(false);
 
-  // PNG export (M10) — only meaningful in the canvas (graph) view; there's no canvas to snapshot
-  // in list view.
-  const graphRef = useRef<GraphHandle>(null);
-  const exportPng = () => {
-    const dataUrl = graphRef.current?.exportPNG();
-    if (!dataUrl) return;
-    downloadDataUrl(dataUrl, pngFilename(wikiName));
-  };
+  // local/global toggle (M6, decisions 8/9/10) — "local" narrows the visible graph down to
+  // `graphSelected` (the persistent graph selection, not the ephemeral arrow-key `cycleCursor`
+  // — recomputing the local scope on every cycle step would make the visible universe shift
+  // under you mid-browse, defeating the point of cycling neighbors without navigating) plus its
+  // direct neighbors. Off by default; toggling never clears itself back off on deselection —
+  // reselecting a node just resumes it (see the `visible` memo below, which no-ops `localize`
+  // when there's nothing selected).
+  const [localView, setLocalView] = useState(false);
+
+  // Screensaver mode (M9 rescoped, decisions 30/31/32) — one boolean, two entry paths: this
+  // Toolbar toggle (manual, any time) and the idle-timer effect below (auto, after IDLE_TIMEOUT_MS
+  // of no input). Either path flips the same state; any input while it's on exits it again.
+  const [screensaverMode, setScreensaverMode] = useState(false);
+
+  // Manual breathing on/off (M10f, decision 49) — composes with Graph.tsx's own automatic
+  // focus-pause (M10d, decision 48) rather than replacing it. Defaults on; not persisted, same
+  // convention as the other mode toggles above.
+  const [breathingEnabled, setBreathingEnabled] = useState(true);
+
+  // Idle timer for screensaver mode's auto-entry path. Any real user input resets the timer and
+  // unconditionally exits screensaver mode (a no-op if it's already off) — same listener drives
+  // both jobs, so entry and exit can never disagree about what counts as "input". Registered once
+  // (no `screensaverMode` dependency): while the mode is active, chrome (including the Toolbar's
+  // own toggle button) is `pointer-events: none`, so a click aimed at that button while active
+  // never reaches it — the click's mousedown instead falls through to whatever is underneath,
+  // which is itself valid "activity" and exits the mode. There's no race between this listener
+  // resetting state and the toggle button's own onClick re-flipping it.
+  const IDLE_TIMEOUT_MS = 60_000;
+  useEffect(() => {
+    let timer = window.setTimeout(() => setScreensaverMode(true), IDLE_TIMEOUT_MS);
+    const onActivity = () => {
+      setScreensaverMode(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setScreensaverMode(true), IDLE_TIMEOUT_MS);
+    };
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "wheel", "pointerdown"];
+    events.forEach((e) => window.addEventListener(e, onActivity));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, onActivity));
+    };
+  }, []);
 
   const closeOnboarding = () => {
     markOnboardingSeen();
@@ -87,6 +129,15 @@ export function App() {
   // highlighted mid-cycle (wraps around graphSelected's neighbor list); Enter commits it.
   const [graphSelected, setGraphSelected] = useState<string | null>(null);
   const [cycleCursor, setCycleCursor] = useState<string | null>(null);
+  // Single/double-click deferral (M10g, decision 50) — the node id of a click still waiting out
+  // its window to see if a second click arrives, plus that window's own timer handle.
+  const pendingClickRef = useRef<{ id: string; timer: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pendingClickRef.current) window.clearTimeout(pendingClickRef.current.timer);
+    };
+  }, []);
 
   useEffect(() => {
     const onHash = () => setTrail(trailFromHash());
@@ -188,7 +239,7 @@ export function App() {
   }, [data, showTagEdges]);
 
   // visible graph after type / node / tag filters (+ the tag-edge overlay toggle)
-  const visible = useMemo<GraphData | null>(() => {
+  const filteredVisible = useMemo<GraphData | null>(() => {
     if (!data) return null;
     const keep = new Set(
       data.nodes
@@ -209,6 +260,29 @@ export function App() {
       }),
     };
   }, [data, hiddenTypes, hiddenNodes, activeTags, showTagEdges]);
+
+  // Local/global toggle (M6) — one further narrowing pass on top of the type/node/tag filters
+  // above, per decision 10 ("composes with/intersects", doesn't override). `localize` itself
+  // no-ops when nothing's selected, so this is a plain pass-through in that case. Drives the
+  // List view, stats, search matches, and ghost-node list — anywhere a real DOM list needs
+  // actually-fewer items, as opposed to Graph's own rendering (see `localIds` below).
+  const visible = useMemo<GraphData | null>(() => {
+    if (!filteredVisible) return null;
+    return localView ? localize(filteredVisible, graphSelected, neighbors) : filteredVisible;
+  }, [filteredVisible, localView, graphSelected, neighbors]);
+
+  // Local View's node-id mask for the *graph canvas* specifically (decision 26) — deliberately
+  // NOT the same thing as feeding `visible` (the narrowed GraphData above) into `<Graph>`.
+  // Narrowing the data cosmos actually simulates was what caused the "jumbles on toggle" bug:
+  // fewer nodes/links makes the physics re-equilibrate into a different configuration no matter
+  // how accurate the seeded starting positions are. `<Graph>` always gets the full
+  // `filteredVisible` (so its simulation never changes shape from this toggle at all) and just
+  // uses this id set to decide what to draw at alpha 0 vs. lit — reuses `localize`'s exact
+  // node-selection logic so the graph's mask and the List view's actual filtering never disagree.
+  const localIds = useMemo<Set<string> | null>(() => {
+    if (!localView || !graphSelected || !filteredVisible) return null;
+    return new Set(localize(filteredVisible, graphSelected, neighbors).nodes.map((n) => n.id));
+  }, [localView, graphSelected, filteredVisible, neighbors]);
 
   // live stats readout (M1) — computed over the currently visible subgraph, so filtering
   // updates it. "orphan" = a visible page with no visible link edges (tag edges don't count,
@@ -254,6 +328,41 @@ export function App() {
   // Open a page fresh from the graph/search — starts a new breadcrumb trail.
   const openPage = (slug: string) => {
     window.location.hash = hashForTrail([slug]);
+  };
+  // Graph canvas click (M10g follow-up, decision 50) — fully replaces decision 25's select-vs-
+  // open model with click *timing*: a single click always just toggles that exact node's
+  // selection (select if different, clear if it's the current selection); a double-click opens
+  // it. A plain click handler can't know a second click isn't coming, so every click is deferred
+  // for `CLICK_DEFER_MS` before its single-click action actually commits — hover-highlighting is
+  // unaffected (still instant via Graph.tsx's own hover state), only this click-to-pin action
+  // gets the brief delay.
+  const CLICK_DEFER_MS = 280;
+  const commitSingleClick = (id: string) => {
+    setGraphSelected((sel) => classifyGraphClick(id, sel));
+    setCycleCursor(null);
+  };
+  const handleGraphClick = (id: string) => {
+    const pending = pendingClickRef.current;
+    if (pending) {
+      window.clearTimeout(pending.timer);
+      pendingClickRef.current = null;
+      if (pending.id === id) {
+        // Second click on the same still-pending node within the window — that's the double-
+        // click, opens it. `openPage`'s "opening a page sets graphSelected" effect below already
+        // re-anchors the selection, so there's no separate select-then-open step needed here.
+        openPage(id);
+        return;
+      }
+      // A different node was clicked while one was still pending — commit the earlier one
+      // immediately instead of waiting out its timer, so rapid single-clicks on different nodes
+      // still feel responsive.
+      commitSingleClick(pending.id);
+    }
+    const timer = window.setTimeout(() => {
+      pendingClickRef.current = null;
+      commitSingleClick(id);
+    }, CLICK_DEFER_MS);
+    pendingClickRef.current = { id, timer };
   };
   // Follow a link from within a page — drills one level deeper into the trail.
   const pushPage = (slug: string) => {
@@ -345,7 +454,7 @@ export function App() {
         <button onClick={() => setRetryCount((n) => n + 1)}>Retry</button>
       </div>
     );
-  if (!data || !visible) return <div className="msg">Loading graph…</div>;
+  if (!data || !filteredVisible || !visible) return <div className="msg">Loading graph…</div>;
 
   const excludedNodes = data.nodes.filter((n) => n.excluded);
   const activeNode = route ? data.nodes.find((n) => n.id === route) ?? null : null;
@@ -354,20 +463,31 @@ export function App() {
     label: data.nodes.find((n) => n.id === slug)?.label ?? slug,
   }));
 
+  const appClassName = [
+    "app",
+    screensaverMode && "screensaver",
+    // M10h — lets styles.css's desktop-width toolbar-centering fix (decision 51) react to the
+    // sidebar's collapsed state without threading `sidebarCollapsed` into Toolbar.tsx itself.
+    sidebarCollapsed && "sidebar-collapsed",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="app">
+    <div className={appClassName}>
       {listView ? (
         <ListView nodes={visible.nodes} onOpen={openPage} />
       ) : (
         <Graph
-          ref={graphRef}
-          data={visible}
+          data={filteredVisible}
           types={types}
           neighbors={neighbors}
           selected={cycleCursor ?? graphSelected}
           searchIds={searchIds}
           theme={theme}
-          onSelect={openPage}
+          onSelect={handleGraphClick}
+          localIds={localIds}
+          breathing={breathingEnabled}
         />
       )}
       <Toolbar
@@ -384,7 +504,13 @@ export function App() {
         onShowHelp={() => setShowOnboarding(true)}
         listView={listView}
         onToggleListView={() => setListView((v) => !v)}
-        onExportPng={exportPng}
+        localView={localView}
+        onToggleLocalView={() => setLocalView((v) => !v)}
+        canLocalize={graphSelected != null}
+        screensaverMode={screensaverMode}
+        onToggleScreensaver={() => setScreensaverMode((v) => !v)}
+        breathingEnabled={breathingEnabled}
+        onToggleBreathing={() => setBreathingEnabled((v) => !v)}
       />
       <Filters
         types={types}
@@ -401,6 +527,9 @@ export function App() {
         showTagEdges={showTagEdges}
         onToggleTagEdges={() => setShowTagEdges((v) => !v)}
         stats={stats}
+        screensaverMode={screensaverMode}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
       />
       {showOnboarding && <Onboarding onClose={closeOnboarding} />}
       {route && (
