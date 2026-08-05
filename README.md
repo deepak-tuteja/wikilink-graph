@@ -125,7 +125,8 @@ node types/tagged pages start hidden in the viewer (all still togglable). See
 
 1. **Parser** (`scripts/parse-wiki.mjs`) walks `WIKI_DIR` and emits one node per `.md` file
    (`{ id: slug, label, type, file, ghost, degree, excluded, tags }`); `type` is the top-level
-   subfolder. Edges come from `[[slug]]` wiki-links **and** relative `[](file.md)` links —
+   subfolder, or a root-level file's own filename stem if it has no subfolder. Edges come from
+   `[[slug]]` wiki-links **and** relative `[](file.md)` links —
    undirected, deduped, mutual links collapsed. Links to non-existent pages become **ghost** nodes
    (dashed in the UI). The parser also copies the wiki's `.md` files into `public/wiki/` so the
    reader can fetch raw markdown, and records the absolute source dir for the "Open in editor" link.

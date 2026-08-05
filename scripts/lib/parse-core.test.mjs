@@ -43,8 +43,9 @@ describe("titleFromSlug", () => {
 });
 
 describe("topLevelType", () => {
-  it("returns 'root' for a top-level file", () => {
-    expect(topLevelType("readme.md")).toBe("root");
+  it("returns the lowercased filename stem for a top-level file", () => {
+    expect(topLevelType("readme.md")).toBe("readme");
+    expect(topLevelType("Decisions.md")).toBe("decisions");
   });
 
   it("returns the first path segment for a nested file", () => {

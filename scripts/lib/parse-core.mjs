@@ -8,9 +8,12 @@ import path from "node:path";
 export const slugify = (p) => path.basename(p, ".md").toLowerCase();
 export const titleFromSlug = (s) => s.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+// A nested file's type is its top-level subfolder. A root-level file has no subfolder to
+// borrow, so it gets its own filename stem as its type (lowercased, matching slugify) instead
+// of every root file collapsing into one shared "root" bucket.
 export function topLevelType(relPath) {
   const parts = relPath.split(path.sep);
-  return parts.length > 1 ? parts[0] : "root";
+  return parts.length > 1 ? parts[0] : path.basename(relPath, ".md").toLowerCase();
 }
 
 // Split out the leading YAML frontmatter block, if any, into its lines.

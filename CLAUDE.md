@@ -12,7 +12,9 @@ this workspace's wiki, while staying reusable for any wiki.
 
 1. **Parser** (`scripts/parse-wiki.mjs`, run by the `parse`/`dev`/`build` npm scripts) walks
    `WIKI_DIR`, and for each `.md` file emits a node `{ id: slug, label, type, file, ghost, degree,
-   excluded }`. `slug` = lowercased filename; `type` = top-level subfolder (or `root`).
+   excluded }`. `slug` = lowercased filename; `type` = top-level subfolder, or a root-level
+   file's own filename stem (lowercased) if it has no subfolder — e.g. `decisions.md` at the
+   wiki root gets `type: "decisions"`, not a shared `"root"` bucket.
    - Edges come from `[[slug]]` wiki-links **and** relative `[](file.md)` markdown links.
      External URLs and `path:line` source citations are ignored. Edges are **undirected**,
      deduped, with mutual links collapsed to one.

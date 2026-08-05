@@ -42,9 +42,9 @@ describe("parse-wiki.mjs against examples/demo-wiki", () => {
   });
 
   it("matches the known-good node/edge counts", () => {
-    expect(graph.nodes).toHaveLength(20);
+    expect(graph.nodes).toHaveLength(21);
     expect(graph.nodes.filter((n) => n.ghost)).toHaveLength(3);
-    expect(graph.links.filter((l) => l.kind === "link")).toHaveLength(44);
+    expect(graph.links.filter((l) => l.kind === "link")).toHaveLength(47);
     expect(graph.links.filter((l) => l.kind === "tag")).toHaveLength(37);
   });
 
@@ -53,6 +53,16 @@ describe("parse-wiki.mjs against examples/demo-wiki", () => {
       if (node.ghost) continue;
       expect(fs.existsSync(path.join(outDir, "wiki", node.file))).toBe(true);
     }
+  });
+
+  it("gives a root-level page its own filename stem as type, not a shared 'root' bucket", () => {
+    const glossary = graph.nodes.find((n) => n.id === "glossary");
+    expect(glossary).toBeDefined();
+    expect(glossary.type).toBe("glossary");
+    const index = graph.nodes.find((n) => n.id === "index");
+    expect(index).toBeDefined();
+    expect(index.type).toBe("index");
+    expect(index.type).not.toBe(glossary.type);
   });
 });
 
@@ -78,6 +88,17 @@ describe("parse-wiki.mjs against examples/edge-case-wiki", () => {
     const buried = graph.nodes.find((n) => n.id === "buried");
     expect(buried).toBeDefined();
     expect(buried.type).toBe("deep");
+  });
+
+  it("gives each root-level file its own filename stem as type, including unicode slugs", () => {
+    const byId = (id) => graph.nodes.find((n) => n.id === id);
+    expect(byId("hello").type).toBe("hello");
+    expect(byId("hub").type).toBe("hub");
+    expect(byId("orphan").type).toBe("orphan");
+    expect(byId("café").type).toBe("café");
+    expect(byId("日本語ページ").type).toBe("日本語ページ");
+    const rootTypes = new Set(["hello", "hub", "orphan", "café", "日本語ページ"].map((id) => byId(id).type));
+    expect(rootTypes.size).toBe(5); // none collapsed into a shared bucket
   });
 
   it("turns every dangling link into a ghost node with no crash", () => {
