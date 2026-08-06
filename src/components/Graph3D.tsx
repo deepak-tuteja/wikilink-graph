@@ -65,8 +65,11 @@ interface Link3D {
 // origin, independent of other nodes' positions. Radius scales with node count (cube root, nodes
 // distributed over a sphere's surface) so both tiny and ~1000-node wikis get a reasonably
 // dense-but-legible ball.
+// Density tuning (2026-08-06 follow-up, post sphere-fill fix) — multiplier dropped 40 -> 32 so the
+// ball reads as a tighter, more visibly "filled" cluster at a given node count, at the cost of more
+// node/label overlap up close (no collision force exists to keep spheres from intersecting).
 function radialTargetFor(nodeCount: number): number {
-  return Math.max(120, Math.cbrt(nodeCount) * 40);
+  return Math.max(120, Math.cbrt(nodeCount) * 32);
 }
 
 // Live visual eval follow-up (2026-08-06) — even after reducing gen-synthetic-wiki.mjs's
