@@ -68,6 +68,11 @@ export function Graph({
   // Set once the user has ever manually zoomed/panned/dragged — gates the periodic auto-re-fit
   // below so it stops stealing the camera back the moment someone takes control of it.
   const hasUserTouchedCameraRef = useRef(false);
+  // M10k — live anchor for "the zoom level a whole-graph fit currently sits at." Kept continuously
+  // up to date with `getZoomLevel()` for as long as the camera is untouched (i.e. wherever
+  // `fitView`/breathing has left it *is* the resting fit), then frozen the instant the user takes
+  // the camera over — see the breath tick below for how this anchors the zoom-gated squeeze.
+  const restingZoomRef = useRef(1);
   const [hover, setHover] = useState<string | null>(null);
   const focus = hover ?? selected;
   // M10d (decision 48) — the breath tick (below) lives inside a mount-once effect and can't
@@ -264,6 +269,19 @@ export function Graph({
     const GRAVITY_MAX = 1.1;
     const CENTER_MIN = 0.25;
     const CENTER_MAX = 0.55;
+    // M10k — zoomed-out-only squeeze (PLAN_VISUAL_UPGRADE.md, follow-up to the reverted M10j).
+    // Reuses the exact same sine phase/cadence as breathing itself (no separate tick, no
+    // `setPointPositions`) — just a stronger gravity/center band, so the squeeze rides the same
+    // smooth rhythm instead of fighting it the way M10j's 1000ms position-nudge tick did.
+    // `ZOOM_GATE_TOLERANCE` gives ~20% headroom above the live resting-fit anchor before the
+    // squeeze turns off, so it stays engaged through ordinary breathing-driven bbox drift and only
+    // releases once the camera has genuinely moved (e.g. the user's first deliberate zoom-in,
+    // measured live as a ~43% jump off resting).
+    const ZOOM_GATE_TOLERANCE = 1.2;
+    const ZOOMED_OUT_GRAVITY_MIN = 0.7;
+    const ZOOMED_OUT_GRAVITY_MAX = 1.5;
+    const ZOOMED_OUT_CENTER_MIN = 0.35;
+    const ZOOMED_OUT_CENTER_MAX = 0.75;
     let breathElapsed = 0;
     let sinceFit = 0;
     const breathTick = window.setInterval(() => {
@@ -277,9 +295,16 @@ export function Graph({
       breathElapsed = (breathElapsed + 200) % BREATH_PERIOD_MS;
       const t = (breathElapsed / BREATH_PERIOD_MS) * Math.PI * 2;
       const breath = (Math.sin(t) + 1) / 2; // 0..1
+      const zoom = g.getZoomLevel();
+      if (!hasUserTouchedCameraRef.current) restingZoomRef.current = zoom;
+      const zoomedOut = zoom <= restingZoomRef.current * ZOOM_GATE_TOLERANCE;
+      const gravityMin = zoomedOut ? ZOOMED_OUT_GRAVITY_MIN : GRAVITY_MIN;
+      const gravityMax = zoomedOut ? ZOOMED_OUT_GRAVITY_MAX : GRAVITY_MAX;
+      const centerMin = zoomedOut ? ZOOMED_OUT_CENTER_MIN : CENTER_MIN;
+      const centerMax = zoomedOut ? ZOOMED_OUT_CENTER_MAX : CENTER_MAX;
       g.setConfigPartial({
-        simulationGravity: GRAVITY_MIN + breath * (GRAVITY_MAX - GRAVITY_MIN),
-        simulationCenter: CENTER_MIN + breath * (CENTER_MAX - CENTER_MIN),
+        simulationGravity: gravityMin + breath * (gravityMax - gravityMin),
+        simulationCenter: centerMin + breath * (centerMax - centerMin),
       });
       g.render(0.08);
       // Gentle periodic re-fit, folded into this same tick — see the `onZoomStart` comment above
