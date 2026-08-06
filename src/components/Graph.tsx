@@ -68,11 +68,6 @@ export function Graph({
   // Set once the user has ever manually zoomed/panned/dragged — gates the periodic auto-re-fit
   // below so it stops stealing the camera back the moment someone takes control of it.
   const hasUserTouchedCameraRef = useRef(false);
-  // M10k — live anchor for "the zoom level a whole-graph fit currently sits at." Kept continuously
-  // up to date with `getZoomLevel()` for as long as the camera is untouched (i.e. wherever
-  // `fitView`/breathing has left it *is* the resting fit), then frozen the instant the user takes
-  // the camera over — see the breath tick below for how this anchors the zoom-gated squeeze.
-  const restingZoomRef = useRef(1);
   const [hover, setHover] = useState<string | null>(null);
   const focus = hover ?? selected;
   // M10d (decision 48) — the breath tick (below) lives inside a mount-once effect and can't
@@ -115,6 +110,124 @@ export function Graph({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    // M10p — direct position-based radial compaction (PLAN_VISUAL_UPGRADE.md), replacing M10k/M10m
+    // (the zoom-gated gravity/center squeeze). M10k/M10m modulated simulationGravity/simulationCenter
+    // off of `g.getZoomLevel()` itself, which is exactly why it never held under zoom (M10n,
+    // live-confirmed): zoom was a literal input to the force math, so every zoom-in/out pushed the
+    // whole layout to a different equilibrium, reading as "scatters on zoom in, folds back on zoom
+    // out." This mechanism never reads zoom at all — it directly writes world-space positions via
+    // `setPointPositions`, which zoom (a pure camera transform layered on top of those positions)
+    // structurally cannot perturb.
+    //
+    // Deliberately NOT `simulationCluster`/`setPointClusters` (see the M10l revert note further
+    // down): any continuous n-body force pulling every point toward one shared centroid compounds
+    // with the already-shared gravity/center forces and collapses the whole graph onto a 1D line,
+    // confirmed live at every magnitude tried. This sidesteps that failure mode by operating outside
+    // the GPU force accumulator entirely — a periodic direct position write, blended rather than
+    // snapped, so the ordinary repulsion/link forces (still running every 32ms physics step in
+    // between compaction passes) keep pushing back against it.
+    //
+    // The clamp target is a Michaelis-Menten-style soft radius (`R*d/(R+d)`): near-identity for
+    // small d (nodes already close to the core barely move), asymptotically bounded at R for large d
+    // (genuine outliers get pulled in hard, however far out they started — "as extreme as
+    // possible"), continuous in between with no threshold discontinuity (the "compact nearby nodes
+    // too, uniformly" ask — a hard cutoff would leave a visible seam between corrected and
+    // uncorrected nodes).
+    //
+    // THREE THINGS FOUND LIVE (2026-08-06, from the user watching it run, not from re-testing a
+    // hypothesis first) and fixed here:
+    //
+    // 1. "Continues to shrink perpetually." `R*d/(R+d)` is strictly less than `d` for every d>0, no
+    // exceptions — so *every* node, not just outliers, gets pulled in by a nonzero amount on every
+    // single pass. Recomputing R from the live median each pass doesn't stop this (the median itself
+    // is one of the things being pulled in), and neither would freezing R alone — the per-pass target
+    // is still strictly smaller than the input regardless, so an unbounded interval genuinely
+    // converges toward a single point given enough time, just slowly. Fixed by running only a bounded
+    // burst of `COMPACT_ITERATIONS` passes at a time, then stopping — "compact hard, then let go,"
+    // not a perpetual force.
+    //
+    // 2. The whole blob visibly walking toward one corner over ~10s, independent of (1). Caused by
+    // using the arithmetic MEAN of live positions as the pull-origin: a handful of not-yet-compacted
+    // stragglers sitting far out in roughly the same direction skew the mean well away from the dense
+    // core's actual visual center, so every pass was compacting the *whole graph* toward that skewed
+    // point, not the core's own center — a slow self-reinforcing drift. Fixed by using the per-axis
+    // MEDIAN instead (robust to exactly this kind of tail skew).
+    //
+    // 3. `compactRadius` — "a default size to return to" — is captured once, on the very first pass
+    // this component ever runs (from the pre-compaction, freshly-seeded layout), so the whole burst
+    // pulls toward one fixed target instead of each pass deriving (and shrinking) its own.
+    //
+    // Deliberately NOT re-triggered on zoom (tried, then reverted before ever shipping): this writes
+    // real world-space positions, and zoom is a camera transform layered on top of them — it already
+    // can't perturb what compaction wrote, with nothing further needed. Re-running compaction on every
+    // `onZoomEnd` would actively fight a deliberate zoom-in: the user zooms in to get more visual room
+    // between nodes, and a re-triggered burst would immediately re-clench everything back toward the
+    // same small radius, undoing the reason they zoomed in the first place.
+    const COMPACT_ITERATIONS = 6;
+    const COMPACT_INTERVAL_MS = 400;
+    const COMPACT_BLEND = 0.35;
+    const COMPACT_RADIUS_MULTIPLIER = 2.2;
+    function median(values: number[]): number {
+      const sorted = values.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    let compactRadius: number | null = null;
+    function compactPass(): void {
+      const g = graphRef.current;
+      if (!g || focusRef.current) return;
+      let pos: number[];
+      try {
+        pos = g.getPointPositions();
+      } catch {
+        return;
+      }
+      const n = pos.length / 2;
+      if (n < 3) return;
+      const xs = new Array<number>(n);
+      const ys = new Array<number>(n);
+      for (let i = 0; i < n; i++) {
+        xs[i] = pos[i * 2];
+        ys[i] = pos[i * 2 + 1];
+      }
+      const cx = median(xs);
+      const cy = median(ys);
+      const dists = new Array<number>(n);
+      for (let i = 0; i < n; i++) {
+        const dx = pos[i * 2] - cx;
+        const dy = pos[i * 2 + 1] - cy;
+        dists[i] = Math.sqrt(dx * dx + dy * dy);
+      }
+      if (compactRadius == null) {
+        compactRadius = Math.max(median(dists) * COMPACT_RADIUS_MULTIPLIER, 50);
+      }
+      const softRadius = compactRadius;
+      for (let i = 0; i < n; i++) {
+        const d = dists[i];
+        if (d < 1e-6) continue;
+        const targetD = (softRadius * d) / (softRadius + d);
+        const scale = 1 + ((targetD - d) / d) * COMPACT_BLEND;
+        pos[i * 2] = cx + (pos[i * 2] - cx) * scale;
+        pos[i * 2 + 1] = cy + (pos[i * 2 + 1] - cy) * scale;
+      }
+      g.setPointPositions(Float32Array.from(pos));
+      g.render(0.08);
+    }
+    let compactTimer: number | null = null;
+    function runCompactBurst(iterations: number) {
+      if (compactTimer != null) window.clearInterval(compactTimer);
+      let count = 0;
+      compactTimer = window.setInterval(() => {
+        if (count >= iterations) {
+          if (compactTimer != null) window.clearInterval(compactTimer);
+          compactTimer = null;
+          return;
+        }
+        compactPass();
+        count++;
+      }, COMPACT_INTERVAL_MS);
+    }
 
     const graph = new CosmosGraph(container, {
       backgroundColor: GRAPH_PALETTE[theme].background,
@@ -223,6 +336,10 @@ export function Graph({
       },
     });
     graphRef.current = graph;
+    // M10p — the initial compaction burst, fired once right on mount (see the block comment above
+    // `compactPass`/`runCompactBurst` for the full mechanism). This is the "as extreme as possible
+    // upon load" pass; nothing re-triggers it afterward.
+    runCompactBurst(COMPACT_ITERATIONS);
 
     // THE REAL "Firefox is stable, Chrome floats away" bug — read straight out of cosmos's own
     // source (index.js), not guessed: its internal render loop (`frame()`) schedules one
@@ -269,19 +386,26 @@ export function Graph({
     const GRAVITY_MAX = 1.1;
     const CENTER_MIN = 0.25;
     const CENTER_MAX = 0.55;
-    // M10k — zoomed-out-only squeeze (PLAN_VISUAL_UPGRADE.md, follow-up to the reverted M10j).
-    // Reuses the exact same sine phase/cadence as breathing itself (no separate tick, no
-    // `setPointPositions`) — just a stronger gravity/center band, so the squeeze rides the same
-    // smooth rhythm instead of fighting it the way M10j's 1000ms position-nudge tick did.
-    // `ZOOM_GATE_TOLERANCE` gives ~20% headroom above the live resting-fit anchor before the
-    // squeeze turns off, so it stays engaged through ordinary breathing-driven bbox drift and only
-    // releases once the camera has genuinely moved (e.g. the user's first deliberate zoom-in,
-    // measured live as a ~43% jump off resting).
-    const ZOOM_GATE_TOLERANCE = 1.2;
-    const ZOOMED_OUT_GRAVITY_MIN = 0.7;
-    const ZOOMED_OUT_GRAVITY_MAX = 1.5;
-    const ZOOMED_OUT_CENTER_MIN = 0.35;
-    const ZOOMED_OUT_CENTER_MAX = 0.75;
+    // M10k/M10m REMOVED (2026-08-06, superseded by M10p below) — the zoomed-out-only squeeze
+    // modulated simulationGravity/simulationCenter off of `g.getZoomLevel()` itself. That's exactly
+    // why it never held under zoom (M10n, live-confirmed): zoom was a literal input to the force
+    // math, so every zoom-in/out recomputed `outFactor` and pushed the whole layout to a different
+    // equilibrium, reading as "scatters on zoom in, folds back on zoom out." Removed outright
+    // rather than patched again — M10p replaces it with a mechanism that never reads zoom at all.
+    //
+    // M10l TRIED AND REVERTED (2026-08-06) — a degree-aware `simulationCluster` leaf-pull (every
+    // point sharing cluster index 0, so the shared centermass was just the graph's own centroid,
+    // per-point strength `1/(1+degree)`). The code comment that shipped alongside it argued a
+    // *single* shared cluster couldn't hit the earlier reverted per-TYPE clustering attempt's
+    // 1D-line collapse, since there'd be only one target for the strength gradient to collapse
+    // onto. Live-tested with Playwright on a fresh page load and that argument turned out to be
+    // wrong: at its shipped strength (simulationCluster 0.4-1.0) the whole 1087-node graph
+    // collapsed into the exact same diagonal 1D streak within ~2 seconds; at 6x weaker
+    // (0.05-0.25) it still collapsed into the same streak, just slower (~28s in). Cluster force at
+    // *any* nonzero magnitude drove the same instability eventually — a magnitude tweak was never
+    // going to fix it. This is why M10p (below) deliberately does NOT use `simulationCluster` or
+    // any other continuous n-body force toward a shared centroid — see its own comment for the
+    // mechanism it uses instead.
     let breathElapsed = 0;
     let sinceFit = 0;
     const breathTick = window.setInterval(() => {
@@ -295,16 +419,9 @@ export function Graph({
       breathElapsed = (breathElapsed + 200) % BREATH_PERIOD_MS;
       const t = (breathElapsed / BREATH_PERIOD_MS) * Math.PI * 2;
       const breath = (Math.sin(t) + 1) / 2; // 0..1
-      const zoom = g.getZoomLevel();
-      if (!hasUserTouchedCameraRef.current) restingZoomRef.current = zoom;
-      const zoomedOut = zoom <= restingZoomRef.current * ZOOM_GATE_TOLERANCE;
-      const gravityMin = zoomedOut ? ZOOMED_OUT_GRAVITY_MIN : GRAVITY_MIN;
-      const gravityMax = zoomedOut ? ZOOMED_OUT_GRAVITY_MAX : GRAVITY_MAX;
-      const centerMin = zoomedOut ? ZOOMED_OUT_CENTER_MIN : CENTER_MIN;
-      const centerMax = zoomedOut ? ZOOMED_OUT_CENTER_MAX : CENTER_MAX;
       g.setConfigPartial({
-        simulationGravity: gravityMin + breath * (gravityMax - gravityMin),
-        simulationCenter: centerMin + breath * (centerMax - centerMin),
+        simulationGravity: GRAVITY_MIN + breath * (GRAVITY_MAX - GRAVITY_MIN),
+        simulationCenter: CENTER_MIN + breath * (CENTER_MAX - CENTER_MIN),
       });
       g.render(0.08);
       // Gentle periodic re-fit, folded into this same tick — see the `onZoomStart` comment above
@@ -327,6 +444,7 @@ export function Graph({
     return () => {
       window.clearInterval(physicsTick);
       window.clearInterval(breathTick);
+      if (compactTimer != null) window.clearInterval(compactTimer);
       if (unpinTimerRef.current != null) window.clearTimeout(unpinTimerRef.current);
       unpinTimerRef.current = null;
       graph.destroy();
@@ -416,11 +534,12 @@ export function Graph({
       const sizes = new Float32Array(ids.length);
 
       // Seed spread widened from the original ±100 to ±800 (2026-08-05, alongside the reverted
-      // clustering attempt above): a narrow shared blob gave the whole graph almost no 2D
-      // structure to fall back on once real forces kicked in, which is exactly the initial
-      // condition that let the cluster-force experiment collapse onto a 1D line. A wide random
-      // spread means gravity/center pull nodes into a circular cloud from many directions instead
-      // of one nearly-shared starting point.
+      // clustering attempts — both the earlier per-type one and M10l's later single-shared-cluster
+      // one, see the breath tick's M10l comment above): a narrow shared blob gave the whole graph
+      // almost no 2D structure to fall back on once real forces kicked in, which is exactly the
+      // initial condition that let a cluster-force experiment collapse onto a 1D line. A wide
+      // random spread means gravity/center pull nodes into a circular cloud from many directions
+      // instead of one nearly-shared starting point.
       ids.forEach((id, i) => {
         const n = nodeById.get(id)!;
         n.x ??= SPACE_SIZE / 2 + (Math.random() - 0.5) * 1600;
