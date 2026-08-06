@@ -62,11 +62,6 @@ export function Graph({
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<CosmosGraph | null>(null);
   const idsRef = useRef<string[]>([]);
-  // M10j — ghost/degree per id, read by the outlier-correction tick below. Populated alongside
-  // `idsRef` in the position-push effect's `pushPositions`, not closed over directly, so the
-  // correction tick (like `breathTick`) can live in the mount-once effect without depending on
-  // `data` and tearing the cosmos instance down on every filter/type toggle.
-  const nodeMetaRef = useRef<Map<string, { ghost: boolean; degree: number }>>(new Map());
   const onSelectRef = useRef(onSelect);
   // Debounces `onPointMouseOut`'s unpin — see the wiring below for why.
   const unpinTimerRef = useRef<number | null>(null);
@@ -304,104 +299,9 @@ export function Graph({
       }
     }, 200);
 
-    // Outlier correction (2026-08-06, M10j) — the repulsion/link-spring retune above
-    // (2026-08-06, the "short pass" comment on `simulationRepulsion`) deliberately lets
-    // weakly-linked nodes settle further from the core than well-linked ones, so real topology
-    // shows through the shape. Left unbounded, though, a ghost or degree<=1 node's only inward
-    // pull is uniform gravity, which can lose to repulsion from the dense core at almost any
-    // distance — live-tested on the 1000-node synthetic-wiki fixture, a handful of them settle
-    // far enough out to read as broken/left-behind rather than "loosely connected" (user report,
-    // screenshots of a load that visibly compacts the core but leaves stragglers dangling).
-    //
-    // Deliberately NOT another global force-config tweak: lowering repulsion/gravity further to
-    // drag stragglers in would fight the retune's own stated goal and re-blob the core. Instead
-    // this reads live positions, computes the *core's own* spread (excluding ghost/degree<=1
-    // points) each tick, and only for points beyond a radius scaled off that spread, nudges them
-    // a fraction of the way back toward the cap — same direction from centroid, not toward it —
-    // so a corrected node still lands outside the core (still reads as "loosely connected"), just
-    // bounded rather than unbounded. Uses `setPointPositions` directly rather than another force:
-    // cosmos exposes no public per-point custom-force hook (see the reverted `simulationCluster`
-    // attempt above for the one clustering lever that does exist, and why it's not a fit here —
-    // it pulls a whole cluster toward its own centermass, which would clump outliers into their
-    // own satellite blob instead of bounding each one individually).
-    //
-    // 1000ms cadence (vs breathTick's 200ms): `transitionDuration` defaults to 800ms, and
-    // `setPointPositions` animates every call as a transition — firing faster than that would
-    // retrigger new transitions on still-mid-flight points. Untouched points get old===new in
-    // the written array, so the transition is a no-op for them; only the actually-corrected
-    // points animate. Gated on `!focusRef.current` only (not `breathingRef`) — this is a
-    // legibility bound, not part of the decorative breathing pulse, and position changes must
-    // never happen mid-hover (see the position-push effect's "floats away, impossible to catch"
-    // postmortem above for why hover touching positions at all was the original bug).
-    const OUTLIER_RADIUS_FACTOR = 1.6; // cap = core's own 90th-percentile radius * this
-    const OUTLIER_PULL_FRACTION = 0.25; // per tick, close this fraction of the excess distance
-    const correctionTick = window.setInterval(() => {
-      const g = graphRef.current;
-      if (!g || focusRef.current) return;
-      const ids = idsRef.current;
-      const meta = nodeMetaRef.current;
-      if (!ids.length) return;
-      let positions: number[];
-      try {
-        positions = g.getPointPositions();
-      } catch {
-        return;
-      }
-      const isOutlier = (id: string) => {
-        const m = meta.get(id);
-        return !!m && (m.ghost || m.degree <= 1);
-      };
-      let cx = 0;
-      let cy = 0;
-      let coreCount = 0;
-      const coreDist: number[] = [];
-      for (let i = 0; i < ids.length; i++) {
-        if (isOutlier(ids[i])) continue;
-        const x = positions[i * 2];
-        const y = positions[i * 2 + 1];
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        cx += x;
-        cy += y;
-        coreCount++;
-      }
-      if (coreCount === 0) return;
-      cx /= coreCount;
-      cy /= coreCount;
-      for (let i = 0; i < ids.length; i++) {
-        if (isOutlier(ids[i])) continue;
-        const x = positions[i * 2];
-        const y = positions[i * 2 + 1];
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        coreDist.push(Math.hypot(x - cx, y - cy));
-      }
-      coreDist.sort((a, b) => a - b);
-      const p90 = coreDist[Math.floor(coreDist.length * 0.9)] ?? 0;
-      const maxRadius = p90 * OUTLIER_RADIUS_FACTOR;
-      if (maxRadius <= 0) return;
-      const next = positions.slice();
-      let changed = false;
-      for (let i = 0; i < ids.length; i++) {
-        if (!isOutlier(ids[i])) continue;
-        const x = positions[i * 2];
-        const y = positions[i * 2 + 1];
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        const dx = x - cx;
-        const dy = y - cy;
-        const dist = Math.hypot(dx, dy);
-        if (dist <= maxRadius) continue;
-        const targetDist = dist - (dist - maxRadius) * OUTLIER_PULL_FRACTION;
-        const scale = targetDist / dist;
-        next[i * 2] = cx + dx * scale;
-        next[i * 2 + 1] = cy + dy * scale;
-        changed = true;
-      }
-      if (changed) g.setPointPositions(new Float32Array(next), true);
-    }, 1000);
-
     return () => {
       window.clearInterval(physicsTick);
       window.clearInterval(breathTick);
-      window.clearInterval(correctionTick);
       if (unpinTimerRef.current != null) window.clearTimeout(unpinTimerRef.current);
       unpinTimerRef.current = null;
       graph.destroy();
@@ -486,9 +386,6 @@ export function Graph({
     function pushPositions(graph: CosmosGraph) {
       const ids = data.nodes.map((n) => n.id);
       idsRef.current = ids;
-      nodeMetaRef.current = new Map(
-        data.nodes.map((n) => [n.id, { ghost: n.ghost, degree: n.degree }]),
-      );
       const indexOf = new Map(ids.map((id, i) => [id, i]));
       const positions = new Float32Array(ids.length * 2);
       const sizes = new Float32Array(ids.length);
