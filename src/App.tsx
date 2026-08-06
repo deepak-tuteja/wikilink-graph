@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Graph } from "./components/Graph";
+import { Graph3D } from "./components/Graph3D";
 import { Filters } from "./components/Filters";
 import { ListView } from "./components/ListView";
 import { Toolbar } from "./components/Toolbar";
@@ -25,6 +26,12 @@ function trailFromHash(): string[] {
 function hashForTrail(slugs: string[]): string {
   return slugs.length ? `#/page/${slugs.map(encodeURIComponent).join("/")}` : "";
 }
+
+// PLAN_3D.md spike escape hatch (decision 8) — branch-local only, never meant to be merged.
+// `?engine=3d` swaps the 2D cosmos.gl canvas for the throwaway react-force-graph-3d spike; every
+// other feature (toolbar, filters, reader, search) stays wired to the same `filteredVisible` data
+// and is simply inert on the 3D canvas, which doesn't consume selection/hover/search props at all.
+const use3DEngine = new URLSearchParams(window.location.search).get("engine") === "3d";
 
 export function App() {
   const [data, setData] = useState<GraphData | null>(null);
@@ -477,6 +484,8 @@ export function App() {
     <div className={appClassName}>
       {listView ? (
         <ListView nodes={visible.nodes} onOpen={openPage} />
+      ) : use3DEngine ? (
+        <Graph3D data={filteredVisible} theme={theme} />
       ) : (
         <Graph
           data={filteredVisible}
