@@ -28,6 +28,14 @@ export const GRAPH_PALETTE: Record<Theme, {
   linkOff: string;
   tagLinkOn: string;
   tagLinkOff: string;
+  // Selection ring color (M10e, decision 55) — matches styles.css's `--link-color` accent, the
+  // same color already used for pressed toolbar buttons and hyperlinks (M10c), for visual
+  // consistency between the graph canvas and the surrounding chrome.
+  ring: string;
+  // Hover ring color (M10e, decision 55) — deliberately a lower-contrast neutral rather than pure
+  // white: decision 27's ring dithering is a rasterization artifact at hard edges, so a softer
+  // edge should show it less, without a shader-level rebuild.
+  hoverRing: string;
 }> = {
   dark: {
     background: "#14161a",
@@ -37,6 +45,8 @@ export const GRAPH_PALETTE: Record<Theme, {
     linkOff: "#2c3138",
     tagLinkOn: "#c08fe8",
     tagLinkOff: "#3a3050",
+    ring: "#6ea8fe",
+    hoverRing: "#aab3c0",
   },
   light: {
     background: "#eef0f3",
@@ -46,5 +56,7 @@ export const GRAPH_PALETTE: Record<Theme, {
     linkOff: "#c9cdd4",
     tagLinkOn: "#9b45c9",
     tagLinkOff: "#dcc7ec",
+    ring: "#3576d6",
+    hoverRing: "#6b7480",
   },
 };

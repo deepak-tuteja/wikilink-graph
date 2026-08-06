@@ -16,7 +16,11 @@
 // structure a force/cluster layout actually has something to do with. A small fraction of links
 // deliberately target nonexistent slugs, so ghost nodes show up at scale too.
 //
-// Gitignored, regenerated on demand: node scripts/gen-synthetic-wiki.mjs [nodeCount=1000]
+// Gitignored, regenerated on demand:
+//   node scripts/gen-synthetic-wiki.mjs [nodeCount=1000] [ghostProb=0.04] [minLinks=1] [maxLinks=4]
+// The last three tune density/ghosts for layout experiments (e.g. a tightly-connected,
+// zero-ghost variant for visual-shape testing) without touching the documented ~1000/~100-ghost
+// default (CLAUDE.md's testing-boundaries note pins that default combo specifically).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -27,6 +31,9 @@ const ROOT = path.resolve(__dirname, "..");
 const OUT = path.join(ROOT, "examples", "synthetic-wiki");
 
 const TOTAL = Math.max(10, parseInt(process.argv[2], 10) || 1000);
+const GHOST_PROB = process.argv[3] !== undefined ? parseFloat(process.argv[3]) : 0.04;
+const MIN_LINKS = Math.max(1, parseInt(process.argv[4], 10) || 1);
+const MAX_LINKS = Math.max(MIN_LINKS, parseInt(process.argv[5], 10) || 4);
 
 const ROOT_PAGES = ["index", "glossary", "decisions", "synthesis", "roadmap"];
 
@@ -128,10 +135,10 @@ function reinforce(slug, type) {
 const links = new Map(); // slug -> [{ target, ghost }]
 for (const node of order) {
   const outLinks = [];
-  const m = 1 + Math.floor(Math.random() * 4); // 1-4 outgoing links per page
+  const m = MIN_LINKS + Math.floor(Math.random() * (MAX_LINKS - MIN_LINKS + 1));
   const sameTypePool = poolFor(node.type);
   for (let i = 0; i < m; i++) {
-    if (Math.random() < 0.04) {
+    if (Math.random() < GHOST_PROB) {
       // Deliberate dangling link — no page will ever exist at this slug, so it becomes a ghost.
       outLinks.push({ target: `missing-${pick(ADJECTIVES)}-${pick(NOUNS)}`, ghost: true });
       continue;

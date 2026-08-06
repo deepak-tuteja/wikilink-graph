@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Graph as CosmosGraph } from "@cosmos.gl/graph";
 import type { GraphData, GraphNode } from "../lib/graph";
-import { colorForType, colorForStatus, nodeRadius, endpointIds, isLit } from "../lib/graph";
+import { colorForType, nodeRadius, endpointIds, isLit } from "../lib/graph";
 import type { Theme } from "../lib/theme";
 import { GRAPH_PALETTE } from "../lib/theme";
 
@@ -150,8 +150,9 @@ export function Graph({
       // instead leans on gravity/center/repulsion/link-distance alone (single global force each,
       // far more stable) plus a much wider initial seed spread to give 2D structure room to form
       // before those forces take hold.
+      // hoveredPointRingColor/focusedPointRingColor are theme-reactive (M10e, decision 55) — set
+      // in the restyle effect below via setConfigPartial, not fixed here at construction time.
       renderHoveredPointRing: true,
-      hoveredPointRingColor: "#fff",
       pointOcclusionCulling: false,
       pointDefaultSize: 20,
       // Leaning on cosmos's own `fitViewOnInit` machinery for the first fit-to-data. Our data
@@ -456,9 +457,11 @@ export function Graph({
       const n = nodeById.get(id)!;
       const on = isLit(id, focus, hover, neighbors, searchIds);
       const inLocal = !localIds || localIds.has(id);
-      const statusColor = colorForStatus(n.status);
       const base = n.ghost ? "#555" : colorForType(n.type);
-      const [r, g, b] = hexToRgba(id === selected && statusColor ? "#ffffff" : base, 1);
+      // M10e (decision 57) — no longer forcing a selected+status node's fill to white; the
+      // accent-colored focusedPointIndex ring (below) now carries the "this is selected" signal
+      // on its own, so the node's real type color stays visible even while selected.
+      const [r, g, b] = hexToRgba(base, 1);
       colors[i * 4] = r;
       colors[i * 4 + 1] = g;
       colors[i * 4 + 2] = b;
@@ -466,6 +469,9 @@ export function Graph({
     });
 
     const linkColors: number[] = [];
+    // M10e (decision 56) — a focused node's own edges also get a width bump, alongside the
+    // existing alpha bump, so they read as visibly thicker/bolder, not just less transparent.
+    const linkWidths: number[] = [];
     for (const l of data.links) {
       const [a, b] = endpointIds(l);
       const ai = indexOf.get(a);
@@ -477,15 +483,30 @@ export function Graph({
       const palette = GRAPH_PALETTE[theme];
       const [r, g, bl] = hexToRgba(isTag ? (on ? palette.tagLinkOn : palette.tagLinkOff) : on ? palette.linkOn : palette.linkOff, 1);
       linkColors.push(r, g, bl, !inLocal ? 0 : on ? 0.8 : 0.25);
+      linkWidths.push(on ? 2.2 : 1);
     }
 
     graph.setPointColors(colors);
     graph.setLinkColors(new Float32Array(linkColors));
+    graph.setLinkWidths(new Float32Array(linkWidths));
+    // M10e (decisions 54/55) — selection drives cosmos's `focusedPointIndex` only (previously
+    // also stacked `outlinedPointIndices` on the same node, drawing two overlapping rings per
+    // cosmos's own docs). Ring colors are theme-reactive, so they're set here every restyle
+    // rather than once at mount.
+    const palette = GRAPH_PALETTE[theme];
     if (selected) {
       const i = indexOf.get(selected);
-      if (i != null) graph.setConfigPartial({ outlinedPointIndices: [i], focusedPointIndex: i });
+      graph.setConfigPartial({
+        focusedPointIndex: i,
+        focusedPointRingColor: palette.ring,
+        hoveredPointRingColor: palette.hoverRing,
+      });
     } else {
-      graph.setConfigPartial({ outlinedPointIndices: undefined, focusedPointIndex: undefined });
+      graph.setConfigPartial({
+        focusedPointIndex: undefined,
+        focusedPointRingColor: palette.ring,
+        hoveredPointRingColor: palette.hoverRing,
+      });
     }
     // No `unpause()` here either — same reasoning as the position-push effect above.
     graph.render();
