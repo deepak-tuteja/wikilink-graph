@@ -27,10 +27,9 @@ function hashForTrail(slugs: string[]): string {
   return slugs.length ? `#/page/${slugs.map(encodeURIComponent).join("/")}` : "";
 }
 
-// PLAN_3D.md spike escape hatch (decision 8) — branch-local only, never meant to be merged.
-// `?engine=3d` swaps the 2D cosmos.gl canvas for the throwaway react-force-graph-3d spike; every
-// other feature (toolbar, filters, reader, search) stays wired to the same `filteredVisible` data
-// and is simply inert on the 3D canvas, which doesn't consume selection/hover/search props at all.
+// `?engine=3d` swaps the 2D cosmos.gl canvas for the v3 hybrid build (PLAN_3D_V2.md) — originally
+// PLAN_3D.md decision 8's branch-local spike escape hatch, kept as the same toggle now that
+// Graph3D.tsx consumes the full selection/hover/search/localIds wiring, same as Graph.tsx.
 const use3DEngine = new URLSearchParams(window.location.search).get("engine") === "3d";
 
 export function App() {
@@ -485,7 +484,16 @@ export function App() {
       {listView ? (
         <ListView nodes={visible.nodes} onOpen={openPage} />
       ) : use3DEngine ? (
-        <Graph3D data={filteredVisible} theme={theme} />
+        <Graph3D
+          data={filteredVisible}
+          neighbors={neighbors}
+          selected={cycleCursor ?? graphSelected}
+          searchIds={searchIds}
+          theme={theme}
+          onSelect={handleGraphClick}
+          localIds={localIds}
+          screensaverMode={screensaverMode}
+        />
       ) : (
         <Graph
           data={filteredVisible}
@@ -540,7 +548,7 @@ export function App() {
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
       />
-      {showOnboarding && <Onboarding onClose={closeOnboarding} />}
+      {showOnboarding && <Onboarding onClose={closeOnboarding} is3D={use3DEngine} />}
       {route && (
         <PageView
           node={activeNode}

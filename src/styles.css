@@ -86,6 +86,26 @@ body {
 
 .app { position: relative; height: 100vh; overflow: hidden; }
 .graph { position: absolute; inset: 0; }
+
+/* Graph3D's reset-camera / home-view button (PLAN_3D_V2.md) — 3D-only: orbit-drag can leave the
+   camera at a disorienting angle with no built-in way back, unlike 2D pan/zoom. Bottom-right
+   corner, same input-bg/panel-border chrome as .icon-btn, but text-labeled rather than icon-only
+   since there's no existing icon convention for "reset camera" to reuse. */
+.graph3d-reset-camera {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 5;
+  padding: 0.4rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--fg-muted);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.graph3d-reset-camera:hover { background: var(--hover-bg); color: var(--fg); }
 .msg { padding: 2rem; color: var(--fg-muted); }
 
 /* ---- Screensaver mode (M9 rescoped, decisions 30-32) ---- */
