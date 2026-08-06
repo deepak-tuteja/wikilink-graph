@@ -67,13 +67,6 @@ const TAGS = [
 ];
 const STATUSES = ["draft", "stable", "deprecated", "in-review"];
 
-// M10i-D (PLAN_VISUAL_UPGRADE.md, 2026-08-06): fraction of non-ghost links that stay within the
-// linking node's own type. Was 0.75 (75% same-type) — with 5 mostly-self-referential types, force-
-// directed layout resolves that into a star/flower of loosely-bridged blobs no matter how the sim's
-// physics constants are tuned (M10i-A/B both confirmed this). Lowered so cross-type bridge-tension
-// pulls the blobs toward each other, not just toward the shared center.
-const SAME_TYPE_LINK_BIAS = 0.35;
-
 function shuffle(arr) {
   const out = arr.slice();
   for (let i = out.length - 1; i > 0; i--) {
@@ -150,7 +143,7 @@ for (const node of order) {
       outLinks.push({ target: `missing-${pick(ADJECTIVES)}-${pick(NOUNS)}`, ghost: true });
       continue;
     }
-    const useSameType = sameTypePool.length > 0 && Math.random() < SAME_TYPE_LINK_BIAS;
+    const useSameType = sameTypePool.length > 0 && Math.random() < 0.75;
     const pool = useSameType ? sameTypePool : poolGlobal;
     if (pool.length === 0) continue; // nothing exists yet (only true for the very first page)
     const target = pick(pool);

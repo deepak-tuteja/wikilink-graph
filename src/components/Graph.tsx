@@ -120,8 +120,8 @@ export function Graph({
       pointSizeScale: 1,
       simulationFriction: 0.82,
       simulationDecay: 3000,
-      simulationGravity: 0.85,
-      simulationCenter: 0.45,
+      simulationGravity: 0.6,
+      simulationCenter: 0.3,
       // Retune (2026-08-06, short pass) — repulsion/gravity/center are all isotropic (pull-to-
       // center or push-apart uniformly in every direction), so with link spring weak relative to
       // them the real link topology barely perturbs that isotropic equilibrium and everything
@@ -130,20 +130,9 @@ export function Graph({
       // shape to come from the actual wiring (connected clusters pull tighter, unlinked/ghost
       // nodes drift comparatively further out) without touching gravity/center themselves, which
       // stay at the values already tuned to prevent the earlier whole-graph translation drift bug.
-      //
-      // M10i-B experiment (2026-08-06, PLAN_VISUAL_UPGRADE.md) — pushed further in the same
-      // direction after M10i-A (a hard radial clamp) was confirmed *not* to fix the scattered
-      // read: the camera auto-fits to the bounding box on every settle, so a purely isotropic
-      // squeeze of the outer envelope is invisible on screen — it can only ever re-photograph the
-      // same *relative* shape at a tighter zoom. Only a change to the relative force balance
-      // (repulsion vs. link-spring/gravity) can actually pull loosely-linked stray nodes
-      // proportionally closer to the connected mass. Repulsion lowered further and gravity/center
-      // raised (above) so the pull-together forces dominate more; link spring raised and link
-      // distance lowered so linked pairs settle measurably closer together, not just "less far
-      // apart than unlinked pairs."
-      simulationRepulsion: 0.35,
-      simulationLinkSpring: 3.5,
-      simulationLinkDistance: 6,
+      simulationRepulsion: 0.6,
+      simulationLinkSpring: 2,
+      simulationLinkDistance: 12,
       // `simulationGravity`/`simulationCenter` are both driven live by the breathing tick below
       // (setConfigPartial), so these two are just the resting/floor values it oscillates up from.
       //
@@ -270,14 +259,11 @@ export function Graph({
     // -speed bug above); `render()` "does NOT modify simulation state" per its own doc comment, so
     // this only bumps alpha — the `physicsTick` metronome above stays the sole thing driving the
     // simulation forward.
-    // M10i-B experiment — floor/ceiling raised alongside the resting gravity/center/repulsion/
-    // link retune above, so the breathing cycle never relaxes back down to the old, looser values
-    // even at its slackest point.
     const BREATH_PERIOD_MS = 6000;
-    const GRAVITY_MIN = 0.8;
-    const GRAVITY_MAX = 1.4;
-    const CENTER_MIN = 0.45;
-    const CENTER_MAX = 0.75;
+    const GRAVITY_MIN = 0.5;
+    const GRAVITY_MAX = 1.1;
+    const CENTER_MIN = 0.25;
+    const CENTER_MAX = 0.55;
     let breathElapsed = 0;
     let sinceFit = 0;
     const breathTick = window.setInterval(() => {
