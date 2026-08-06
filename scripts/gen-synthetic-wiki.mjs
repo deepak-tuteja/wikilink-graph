@@ -143,7 +143,11 @@ for (const node of order) {
       outLinks.push({ target: `missing-${pick(ADJECTIVES)}-${pick(NOUNS)}`, ghost: true });
       continue;
     }
-    const useSameType = sameTypePool.length > 0 && Math.random() < 0.75;
+    // Was 0.75 — that strong a same-type bias produces near-disjoint per-type communities that
+    // the 3D force layout settles into separate isolated patches on the ball's surface (visible
+    // gaps of empty space between them) rather than an evenly filled sphere. More cross-type
+    // links pull the communities together without erasing the color clustering entirely.
+    const useSameType = sameTypePool.length > 0 && Math.random() < 0.55;
     const pool = useSameType ? sameTypePool : poolGlobal;
     if (pool.length === 0) continue; // nothing exists yet (only true for the very first page)
     const target = pick(pool);
