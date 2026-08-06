@@ -275,9 +275,20 @@ export function Graph3D({
   // Frames the selected node's cluster (itself + its direct neighbors), not just the node alone,
   // via a one-shot `cameraPosition` lerp — never a persistent lock, so orbit-drag immediately
   // regains full control once the transition finishes.
+  //
+  // On deselect, react-force-graph's OrbitControls target is left wherever the last select left
+  // it (the old cluster centroid) — orbit-drag would keep pivoting around that stale point
+  // forever, making the last-selected node look like a frozen rotation axis. Re-centering the
+  // target on the origin (same target `resetCamera` uses) without moving the camera position
+  // fixes that; camera position is intentionally left alone so deselecting doesn't yank the view.
   useEffect(() => {
     const fg = fgRef.current;
-    if (!fg || !selected) return;
+    if (!fg) return;
+    if (!selected) {
+      const cam = fg.camera().position;
+      fg.cameraPosition({ x: cam.x, y: cam.y, z: cam.z }, { x: 0, y: 0, z: 0 }, 400);
+      return;
+    }
     const nodeById = new Map(graphData.nodes.map((n) => [n.id, n as Node3D & { x?: number; y?: number; z?: number }]));
     const clusterIds = [selected, ...(neighbors.get(selected) ?? [])];
     const pts = clusterIds
