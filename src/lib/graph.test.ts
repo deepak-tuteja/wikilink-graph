@@ -9,6 +9,7 @@ import {
   isLit,
   localize,
   classifyGraphClick,
+  breathingScale,
 } from "./graph";
 import type { GraphNode, GraphLink, GraphData } from "./graph";
 
@@ -208,5 +209,35 @@ describe("classifyGraphClick", () => {
 
   it("replaces the selection with whatever other node was clicked", () => {
     expect(classifyGraphClick("b", "a")).toBe("b");
+  });
+});
+
+describe("breathingScale", () => {
+  it("is 1 (no scale change) at elapsed=0", () => {
+    expect(breathingScale(0)).toBe(1);
+  });
+
+  it("returns to 1 after a full period", () => {
+    expect(breathingScale(6000, 6000)).toBeCloseTo(1, 10);
+  });
+
+  it("peaks at +amplitude a quarter-period in", () => {
+    expect(breathingScale(1500, 6000, 0.1)).toBeCloseTo(1.1, 10);
+  });
+
+  it("troughs at -amplitude three-quarters through", () => {
+    expect(breathingScale(4500, 6000, 0.1)).toBeCloseTo(0.9, 10);
+  });
+
+  it("stays within [1-amplitude, 1+amplitude] across a full cycle", () => {
+    for (let t = 0; t <= 6000; t += 250) {
+      const s = breathingScale(t, 6000, 0.1);
+      expect(s).toBeGreaterThanOrEqual(0.9 - 1e-9);
+      expect(s).toBeLessThanOrEqual(1.1 + 1e-9);
+    }
+  });
+
+  it("respects a custom amplitude", () => {
+    expect(breathingScale(1500, 6000, 0.25)).toBeCloseTo(1.25, 10);
   });
 });

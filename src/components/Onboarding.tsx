@@ -56,6 +56,7 @@ export function Onboarding({ onClose, is3D = false }: Props) {
             <ul className="onboarding-list">
               <li>Idle a while (or toggle the screensaver button) to auto-rotate the ball</li>
               <li>"Reset view" (bottom-right of the canvas) snaps the camera back to its default position</li>
+              <li>The "Breathing" toggle pulses the whole ball gently — pauses while you hover or select a node</li>
             </ul>
           </>
         )}

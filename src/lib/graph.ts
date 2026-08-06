@@ -146,6 +146,15 @@ export function classifyGraphClick(id: string, currentSelected: string | null): 
   return id === currentSelected ? null : id;
 }
 
+// Breathing effect for the 3D hybrid build (PLAN_BREATHING.md) — a pure visual pulse, deliberately
+// NOT a physics/simulation effect like Graph.tsx's 2D breathing (decision 1: re-driving
+// d3-force-3d risks reintroducing the layout instability 3D was chosen specifically to avoid).
+// Returns a scale factor centered on 1.0 (default ±10%) from a sine wave over `elapsedMs`, applied
+// uniformly to every node's THREE.Group so the whole ball grows/shrinks in sync (decision 3).
+export function breathingScale(elapsedMs: number, periodMs = 6000, amplitude = 0.1): number {
+  return 1 + Math.sin((2 * Math.PI * elapsedMs) / periodMs) * amplitude;
+}
+
 export function linkId(l: GraphLink): string {
   const s = typeof l.source === "string" ? l.source : l.source.id;
   const t = typeof l.target === "string" ? l.target : l.target.id;

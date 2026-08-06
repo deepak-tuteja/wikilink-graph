@@ -3,7 +3,7 @@ import ForceGraph3D, { type ForceGraphMethods } from "react-force-graph-3d";
 import { forceRadial } from "d3-force-3d";
 import * as THREE from "three";
 import type { GraphData, GraphNode } from "../lib/graph";
-import { colorForType, colorForStatus, nodeRadius, endpointIds, isLit } from "../lib/graph";
+import { colorForType, colorForStatus, nodeRadius, endpointIds, isLit, breathingScale } from "../lib/graph";
 import type { Theme } from "../lib/theme";
 import { GRAPH_PALETTE } from "../lib/theme";
 
@@ -25,6 +25,9 @@ interface Props {
   // rather than a second, Graph3D-local idle timer — same two-entry-path (auto-after-idle, manual
   // toggle) pattern the 2D monochrome screensaver already established.
   screensaverMode: boolean;
+  // PLAN_BREATHING.md — mirrors Graph.tsx's existing `breathing` prop (App.tsx's Toolbar-backed
+  // `breathingEnabled` state), previously a no-op in 3D. Visual-only pulse, see decision 1.
+  breathing: boolean;
 }
 
 interface Node3D {
@@ -68,6 +71,7 @@ export function Graph3D({
   onSelect,
   localIds,
   screensaverMode,
+  breathing,
 }: Props) {
   const fgRef = useRef<ForceGraphMethods<Node3D, Link3D> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -84,6 +88,9 @@ export function Graph3D({
   const neighborsRef = useRef(neighbors);
   const localIdsRef = useRef(localIds);
   const themeRef = useRef(theme);
+  // PLAN_BREATHING.md — the tick loop below is a persistent RAF closure, not re-created on every
+  // React render, so it reads current props through a ref just like the other interactive state.
+  const breathingRef = useRef(breathing);
   useEffect(() => {
     hoverRef.current = hover;
   }, [hover]);
@@ -102,6 +109,9 @@ export function Graph3D({
   useEffect(() => {
     themeRef.current = theme;
   }, [theme]);
+  useEffect(() => {
+    breathingRef.current = breathing;
+  }, [breathing]);
 
   const graphData = useMemo(() => {
     const nodeById = new Map<string, GraphNode>(data.nodes.map((n) => [n.id, n]));
@@ -151,6 +161,9 @@ export function Graph3D({
   const nodeThreeObject = useMemo(
     () => (node: Node3D) => {
       const group = new THREE.Group();
+      // PLAN_BREATHING.md — tags the group so the billboard/breathing tick loop can find and
+      // scale exactly the node groups (scaling the group scales its sphere + ring child together).
+      group.userData.isNodeGroup = true;
       const r = nodeRadius(node as unknown as GraphNode);
       const sphere = new THREE.Mesh(
         new THREE.SphereGeometry(r, 12, 8),
@@ -331,14 +344,29 @@ export function Graph3D({
 
   // Billboard the status rings every frame, independent of the physics tick loop (which stops
   // once the simulation cools down) — see the block comment above this component for why.
+  //
+  // PLAN_BREATHING.md — the same loop drives the breathing pulse (decision: extend this loop
+  // rather than add a second rAF), since it already keeps running after the simulation cools and
+  // during idle auto-rotate, which breathing needs too. `elapsed` accumulates real wall-clock time
+  // between frames but is frozen (not reset) while paused — by hover/select (decision 5) or the
+  // manual toggle — so resuming continues the same cycle instead of restarting at phase 0.
   useEffect(() => {
     let raf: number;
-    const tick = () => {
+    let lastTs: number | null = null;
+    let elapsed = 0;
+    const tick = (ts: number) => {
       const fg = fgRef.current;
       if (fg) {
         const camQuat = fg.camera().quaternion;
+        const paused = !breathingRef.current || Boolean(hoverRef.current) || Boolean(selectedRef.current);
+        if (lastTs !== null && !paused) {
+          elapsed += ts - lastTs;
+        }
+        lastTs = ts;
+        const scale = breathingScale(elapsed);
         fg.scene().traverse((obj) => {
           if (obj.userData?.isRing) obj.quaternion.copy(camQuat);
+          if (obj.userData?.isNodeGroup) obj.scale.setScalar(scale);
         });
       }
       raf = requestAnimationFrame(tick);

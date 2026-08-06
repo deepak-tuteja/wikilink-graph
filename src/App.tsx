@@ -493,6 +493,7 @@ export function App() {
           onSelect={handleGraphClick}
           localIds={localIds}
           screensaverMode={screensaverMode}
+          breathing={breathingEnabled}
         />
       ) : (
         <Graph
