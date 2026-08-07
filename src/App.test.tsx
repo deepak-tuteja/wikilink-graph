@@ -3,10 +3,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 
-// Graph.tsx drives a real WebGL canvas via @cosmos.gl/graph, which jsdom doesn't implement —
-// stub it out for the tests below that render past the loading/error states into the graph view.
-vi.mock("./components/Graph", () => ({
-  Graph: () => null,
+// Graph3D.tsx drives a real WebGL canvas via react-force-graph-3d/three.js, which jsdom doesn't
+// implement — stub it out for the tests below that render past the loading/error states into the
+// graph view.
+vi.mock("./components/Graph3D", () => ({
+  Graph3D: () => null,
 }));
 
 describe("App — graph.json load failure", () => {

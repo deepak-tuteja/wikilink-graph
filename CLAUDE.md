@@ -5,10 +5,18 @@ Parses a wiki folder into a node/edge graph and renders it with a force-directed
 a node previews the rendered markdown in-app. Built to remove the Obsidian dependency for graphing
 this workspace's wiki, while staying reusable for any wiki.
 
-**Stack:** Vite + React + `@cosmos.gl/graph` (GPU/WebGL rendering + physics, M5 2026-08-05 —
-replaced the M3 `sigma`/`graphology`/`d3-force` stack, itself a replacement for the original
-`react-force-graph-2d`) + `react-markdown`. **Skill:** `wikilink-graph` (start/stop). **Default
-port:** 5179.
+**Stack:** Vite + React + `react-force-graph-3d` + `d3-force-3d` + `three` (3D WebGL rendering +
+physics, PLAN_3D_V2.md, finalized 2026-08-07 — replaced the M5 `@cosmos.gl/graph` 2D stack, which
+itself had replaced the M3 `sigma`/`graphology`/`d3-force` stack, itself a replacement for the
+original `react-force-graph-2d`) + `react-markdown`. **Skill:** `wikilink-graph` (start/stop).
+**Default port:** 5179.
+
+The graph renders as a rotatable 3D "ball": nodes seeded onto a Fibonacci sphere and constrained
+by `forceRadial` (distance-only) + `forceCenter(0,0,0)` (per-tick recenter) so the shape stays an
+evenly filled sphere rather than drifting into a lopsided crescent — see PLAN_3D_V2.md's
+"Sphere-fill fix" for the three compounding causes that bug had. Orbit-drag (`TrackballControls`)
+replaces 2D pan/zoom; tag/status rings render as camera-billboarded torus geometry instead of a
+flat 2D ring, since a flat ring only reads correctly face-on.
 
 ## How it works
 
@@ -45,25 +53,32 @@ port:** 5179.
      arrow keys move `cycleCursor` through `graphSelected`'s neighbor list (wrapping, sorted),
      Enter opens the reader for whichever is highlighted (which re-anchors `graphSelected` to it),
      and Esc backs off the cycle first, then fully deselects.
-   - `components/Graph.tsx` — a persistent `@cosmos.gl/graph` `Graph` instance owns both the GPU
-     physics simulation and the WebGL rendering (no external layout library — cosmos bundles its
-     own, unlike the M3 sigma/d3-force split). Color-by-type, radius-by-degree, ghost/status/
-     selection encoded via point color + `outlinedPointIndices`/`focusedPointIndex`.
-     Hover/selection highlights node + neighbors and dims the rest via alpha on `setPointColors`;
-     a `searchIds` set highlights search matches. Clicking a node reports it via `onSelect`, but
-     the component itself is agnostic about what that click *does* — `App.tsx`'s `handleGraphClick`
+   - `components/Graph3D.tsx` — a persistent `react-force-graph-3d` instance owns the 3D scene;
+     `d3-force-3d` drives the physics (`forceRadial` + `forceCenter(0,0,0)` + `forceManyBody`,
+     see PLAN_3D_V2.md). Nodes are custom `THREE.Object3D` groups (`nodeThreeObject`) — a sphere
+     colored by type/degree/ghost status, plus a `THREE.TorusGeometry` ring for status, billboarded
+     to face the camera every frame via a persistent `requestAnimationFrame` loop (independent of
+     the physics tick, which stops once the simulation settles — see PLAN_BREATHING.md decision 1
+     for why the rAF loop must keep running regardless). That same loop also drives the "breathing"
+     pulse (gentle scale oscillation, pauses on hover/select) and re-clamps any node that's drifted
+     outside the sphere shell. `nodeThreeObject`'s accessors read current hover/selected/searchIds/
+     localIds/theme through refs rather than closure state, since three-forcegraph only re-invokes
+     them on an explicit `refresh()` call, not on every React re-render — a `useEffect` keyed on
+     those values calls it manually. Hover/selection highlights node + neighbors and dims the rest
+     via opacity (`isLit` in `lib/graph.ts`, engine-agnostic pure function); a `searchIds` set
+     highlights search matches the same way. Clicking a node reports it via `onSelect`, but the
+     component itself is agnostic about what that click *does* — `App.tsx`'s `handleGraphClick`
      decides, via the pure `shouldOpenOnClick`, whether it's a select-only click (highlights the
-     node + neighbors, no navigation) or an open click (navigates to `#/page/<slug>`), mirroring
-     the select-vs-open split the keyboard flow already has (arrow keys highlight, Enter opens).
-     The `selected` prop (driven by click **or** `App.tsx`'s keyboard cycling — this component is
-     engine-agnostic there, it just honors whatever id it's given) drives the outline/focus
-     styling. Cosmos's own render loop is frame-rate-coupled (advances physics once per rendered
-     frame, no deltaTime normalization), which made simulation speed browser-dependent — fixed by
-     `graph.pause()` plus a manual `setInterval` metronome driving `step()` at a fixed wall-clock
-     cadence, so physics speed no longer depends on how fast a given browser/GPU renders frames.
-     No minimap and no PNG export — both were sigma-specific (M4) and were dropped rather than
-     ported in the M5 cutover (decision 21); keyboard neighbor-cycling carried over for free since
-     it was always `App.tsx`'s own logic, not the renderer's.
+     node + neighbors, re-frames the camera on the cluster, no navigation) or an open click
+     (navigates to `#/page/<slug>`), mirroring the select-vs-open split the keyboard flow already
+     has (arrow keys highlight + re-frame, Enter opens). The `selected` prop (driven by click **or**
+     `App.tsx`'s keyboard cycling) drives both the highlight and a one-shot animated
+     `cameraPosition()` lerp framing the selected node's cluster. Idle auto-rotate reuses `App.tsx`'s
+     existing idle-timeout `screensaverMode` state, applied to `controls().autoRotate`; a
+     self-contained "Reset view" button snaps the camera back to its post-load home position. No
+     minimap and no PNG export — both were sigma-specific (M4) and were never ported forward;
+     keyboard neighbor-cycling carried over for free since it was always `App.tsx`'s own logic, not
+     the renderer's.
    - `components/PageView.tsx` — **full-page reader overlay** (graph stays mounted behind it).
      Fetches `wiki/<file>`, renders with `react-markdown` and prose styles; rewrites `[[slug]]`
      into in-app links; "← Back to graph" + Esc; "Open in editor" → `vscode://file/<wikiDir>/<file>`.
@@ -73,7 +88,7 @@ port:** 5179.
    - `lib/views.ts` — load/save named views in `localStorage` (`wikilink-graph.views`).
    - `lib/theme.ts` — light/dark theme state, persisted to `localStorage`
      (`wikilink-graph.theme`); toggled via the ☀/☾ button in `Toolbar.tsx`. `App.tsx` stamps
-     `data-theme` on `<html>` for the CSS custom properties in `styles.css`; `Graph.tsx` reads
+     `data-theme` on `<html>` for the CSS custom properties in `styles.css`; `Graph3D.tsx` reads
      `GRAPH_PALETTE[theme]` for the canvas colors CSS can't reach (background, link/label colors).
 
    Routing is hash-based (`#/page/<slug>`), so reader URLs are shareable deep links and browser
@@ -181,11 +196,13 @@ Generated artifacts (`public/graph.json`, `public/wiki/`, `dist/`, `.wikilink-gr
 excluded from the default run — spawns real dev servers) + `npm run typecheck` + `npm run build`
 is the full local gate; CI (`.github/workflows/ci.yml`) runs all four on push/PR to `main`.
 
-- `Graph.tsx` wraps `@cosmos.gl/graph`'s WebGL rendering, which jsdom can't render without a real
-  GPU context this project doesn't depend on — so it isn't unit-tested (`App.test.tsx` mocks
-  `Graph.tsx` out wholesale). Its actual *logic* (dimming precedence) is extracted into a plain
-  function (`isLit` in `lib/graph.ts`) and covered there. Visual/WebGL behavior is verified live
-  (dev server + Playwright) instead — not part of the automated suite.
+- `Graph3D.tsx` wraps `react-force-graph-3d`/`three.js`'s WebGL rendering, which jsdom can't
+  render without a real GPU context this project doesn't depend on — so it isn't unit-tested
+  (`App.test.tsx` mocks `Graph3D.tsx` out wholesale). Its actual *logic* (dimming precedence) is
+  extracted into a plain function (`isLit` in `lib/graph.ts`) and covered there. Visual/WebGL
+  behavior is verified live (dev server + Playwright, plus real-browser cross-checks — a prior
+  spike shipped a Chromium-clean fix that black-screened in real Firefox and Playwright never
+  caught it) instead — not part of the automated suite.
 - `scripts/pack-install.mjs`, `scripts/gen-feature-wiki.mjs`, and `scripts/gen-synthetic-wiki.mjs`
   are one-shot ops/dev-fixture scripts that shell out to real system state (a global
   `npm install -g`, an external source wiki dir, or — for the synthetic generator — bulk `fs`

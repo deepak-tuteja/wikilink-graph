@@ -1,7 +1,7 @@
 {
   "name": "wikilink-graph",
   "private": false,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Standalone force-directed graph viewer for a [[slug]]-linked markdown wiki",
   "type": "module",
@@ -24,7 +24,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cosmos.gl/graph": "^3.4.0",
     "d3-force-3d": "^3.0.6",
     "lucide-react": "^1.28.0",
     "react": "^18.3.1",

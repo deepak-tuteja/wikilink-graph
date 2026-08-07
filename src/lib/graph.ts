@@ -8,14 +8,9 @@ export interface GraphNode {
   ghost: boolean;
   degree: number;
   excluded: boolean;
-  // Seeded once (on first appearance) by Graph.tsx's position-push effect via `??=`, then kept in
-  // sync with cosmos.gl's own live GPU-simulated position by that same effect's *cleanup*: cosmos
-  // itself never writes positions back onto these JS objects mid-simulation, but the cleanup reads
-  // `graph.getPointPositions()` for the outgoing node set right before a `data` swap would
-  // otherwise discard the mapping, and writes the live x/y back here (PLAN_VISUAL_UPGRADE.md
-  // decision 24). So x/y are the node's last-known-live position as of the most recent `data`
-  // change, not a frozen mount-time seed — still just a JS-side mirror updated at swap boundaries,
-  // not a value cosmos reads from continuously.
+  // Seeded once (on first appearance) by Graph3D.tsx's Fibonacci-sphere placement, then mutated
+  // in place by d3-force-3d's own simulation tick — same object identity throughout, so x/y (and
+  // the runtime-only z) are always the node's current live position, not a frozen seed.
   x?: number;
   y?: number;
 }

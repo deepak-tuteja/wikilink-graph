@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Graph } from "./components/Graph";
 import { Graph3D } from "./components/Graph3D";
 import { Filters } from "./components/Filters";
 import { ListView } from "./components/ListView";
@@ -26,11 +25,6 @@ function trailFromHash(): string[] {
 function hashForTrail(slugs: string[]): string {
   return slugs.length ? `#/page/${slugs.map(encodeURIComponent).join("/")}` : "";
 }
-
-// `?engine=3d` swaps the 2D cosmos.gl canvas for the v3 hybrid build (PLAN_3D_V2.md) — originally
-// PLAN_3D.md decision 8's branch-local spike escape hatch, kept as the same toggle now that
-// Graph3D.tsx consumes the full selection/hover/search/localIds wiring, same as Graph.tsx.
-const use3DEngine = new URLSearchParams(window.location.search).get("engine") === "3d";
 
 export function App() {
   const [data, setData] = useState<GraphData | null>(null);
@@ -271,17 +265,17 @@ export function App() {
   // above, per decision 10 ("composes with/intersects", doesn't override). `localize` itself
   // no-ops when nothing's selected, so this is a plain pass-through in that case. Drives the
   // List view, stats, search matches, and ghost-node list — anywhere a real DOM list needs
-  // actually-fewer items, as opposed to Graph's own rendering (see `localIds` below).
+  // actually-fewer items, as opposed to Graph3D's own rendering (see `localIds` below).
   const visible = useMemo<GraphData | null>(() => {
     if (!filteredVisible) return null;
     return localView ? localize(filteredVisible, graphSelected, neighbors) : filteredVisible;
   }, [filteredVisible, localView, graphSelected, neighbors]);
 
   // Local View's node-id mask for the *graph canvas* specifically (decision 26) — deliberately
-  // NOT the same thing as feeding `visible` (the narrowed GraphData above) into `<Graph>`.
-  // Narrowing the data cosmos actually simulates was what caused the "jumbles on toggle" bug:
-  // fewer nodes/links makes the physics re-equilibrate into a different configuration no matter
-  // how accurate the seeded starting positions are. `<Graph>` always gets the full
+  // NOT the same thing as feeding `visible` (the narrowed GraphData above) into `<Graph3D>`.
+  // Narrowing the data the physics sim actually simulates was what caused the "jumbles on toggle"
+  // bug: fewer nodes/links makes d3-force-3d re-equilibrate into a different configuration no
+  // matter how accurate the seeded starting positions are. `<Graph3D>` always gets the full
   // `filteredVisible` (so its simulation never changes shape from this toggle at all) and just
   // uses this id set to decide what to draw at alpha 0 vs. lit — reuses `localize`'s exact
   // node-selection logic so the graph's mask and the List view's actual filtering never disagree.
@@ -483,7 +477,7 @@ export function App() {
     <div className={appClassName}>
       {listView ? (
         <ListView nodes={visible.nodes} onOpen={openPage} />
-      ) : use3DEngine ? (
+      ) : (
         <Graph3D
           data={filteredVisible}
           neighbors={neighbors}
@@ -493,18 +487,6 @@ export function App() {
           onSelect={handleGraphClick}
           localIds={localIds}
           screensaverMode={screensaverMode}
-          breathing={breathingEnabled}
-        />
-      ) : (
-        <Graph
-          data={filteredVisible}
-          types={types}
-          neighbors={neighbors}
-          selected={cycleCursor ?? graphSelected}
-          searchIds={searchIds}
-          theme={theme}
-          onSelect={handleGraphClick}
-          localIds={localIds}
           breathing={breathingEnabled}
         />
       )}
@@ -549,7 +531,7 @@ export function App() {
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
       />
-      {showOnboarding && <Onboarding onClose={closeOnboarding} is3D={use3DEngine} />}
+      {showOnboarding && <Onboarding onClose={closeOnboarding} />}
       {route && (
         <PageView
           node={activeNode}

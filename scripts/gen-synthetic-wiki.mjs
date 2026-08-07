@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Generates examples/synthetic-wiki/ — a configurable-size (default ~1000 nodes), fully synthetic
 // [[slug]]-linked markdown wiki with no dependency on real workspace content, purpose-built to
-// make WebGL clustering/bloom visually legible once the @cosmograph/cosmos engine swap (M3) lands
-// (the real workspaceWiki tops out around ~40 nodes, too small to justify a GPU renderer).
+// make WebGL clustering/density visually legible at scale (the real workspaceWiki tops out around
+// ~40 nodes, too small to justify a GPU renderer).
 //
 // Type distribution: 5 folder types (concepts/features/guides/reference/projects, weighted so
 // clusters read as visibly different sizes) plus 5 root-level pages (index/glossary/decisions/

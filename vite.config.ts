@@ -14,10 +14,5 @@ export default defineConfig({
   // one — the CLI reports (and tracks) the port it was asked for, so a silent drift would lie.
   server: { port: PORT, host: true, strictPort: true },
   preview: { port: PORT, host: true, strictPort: true },
-  // @cosmos.gl/graph (luma.gl/WebGL) renders nothing when esbuild-pre-bundled by Vite's default
-  // optimizeDeps (confirmed: valid point data, no console errors, but zero non-background pixels
-  // on canvas readback) while the exact same code renders fine via the library's own hosted
-  // build. Excluding it from pre-bundling is the standard fix for this class of bug with
-  // shader-string-heavy WebGL libs.
-  optimizeDeps: { exclude: ["@cosmos.gl/graph"], include: ["seedrandom"] },
+  optimizeDeps: { include: ["seedrandom"] },
 });
