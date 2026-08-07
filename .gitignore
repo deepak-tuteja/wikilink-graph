@@ -8,3 +8,5 @@ examples/synthetic-wiki
 PROGRESS.md
 /PLAN.md
 /PLAN_*.md
+!/PLAN_FEATURE_TESTING.md
+!/PLAN_CPU_PROFILING.md

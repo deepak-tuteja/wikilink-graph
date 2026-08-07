@@ -10,7 +10,8 @@ import { spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const WIKI_DIR = path.resolve(ROOT, process.env.WIKI_DIR || "examples/demo-wiki");
+// Kept in sync with parse-wiki.mjs's own default (examples/synthetic-wiki).
+const WIKI_DIR = path.resolve(ROOT, process.env.WIKI_DIR || "examples/synthetic-wiki");
 const DEBOUNCE_MS = 300;
 
 // wikiDir defaults to the module-level WIKI_DIR (resolved from process.env at import time); the

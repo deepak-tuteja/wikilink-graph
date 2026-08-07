@@ -98,7 +98,7 @@ flat 2D ring, since a flat ring only reads correctly face-on.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `WIKI_DIR` | `examples/demo-wiki` | Source wiki folder |
+| `WIKI_DIR` | `examples/synthetic-wiki` | Source wiki folder — the dense ~1100-node fixture, matching the live GH Pages demo; gitignored, run `npm run gen-synthetic-wiki` once after cloning |
 | `WIKI_EXCLUDE` | `INDEX,synthesis` | Slugs hidden by default (togglable) |
 | `PORT` | `5179` | Vite serve port |
 | `WIKI_WATCH` | unset | `1` re-parses + full-reloads on `.md` changes under `WIKI_DIR` (dev mode only). Set by `--watch`; not meant to be set directly for plain `npm run dev` |

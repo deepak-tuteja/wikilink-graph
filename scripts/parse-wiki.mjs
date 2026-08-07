@@ -26,7 +26,12 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-const WIKI_DIR = path.resolve(ROOT, process.env.WIKI_DIR || "examples/demo-wiki");
+// Default is the dense ~1100-node synthetic fixture (examples/synthetic-wiki), not the small
+// demo-wiki — it's what actually exercises the 3D ball's clustering/motion/behavior at scale
+// (README's "Quick start"). It's gitignored, so a fresh clone needs `npm run gen-synthetic-wiki`
+// once before a bare `npm run dev`/`build` works; the CLI's `--wiki` flag is unaffected (always
+// explicit) and demo-wiki remains the documented zero-setup fallback for that path.
+const WIKI_DIR = path.resolve(ROOT, process.env.WIKI_DIR || "examples/synthetic-wiki");
 
 // Config file (M9, decision #17/#18): `.wikilink-graph.json` inside the wiki folder itself, so it
 // travels with the wiki when shared/cloned/committed. Covers exclude-list + default hidden

@@ -6,19 +6,23 @@ folder into a node/edge graph, renders it with a force-directed layout, and lets
 read its rendered markdown in-app — so you can graph a `[[wikilink]]` folder without needing one of
 those apps, while staying reusable for any wiki folder.
 
-Built with **Vite + React + `@cosmos.gl/graph` (GPU/WebGL rendering) + `react-markdown`**. Default
-port **5179**. The architecture reference is [`CLAUDE.md`](./CLAUDE.md).
+Built with **Vite + React + `react-force-graph-3d` + `d3-force-3d` + `three` (3D WebGL rendering +
+physics) + `react-markdown`**. Default port **5179**. The architecture reference is
+[`CLAUDE.md`](./CLAUDE.md).
 
 **[Live demo](https://deepak-tuteja.github.io/wikilink-graph/)** — a dense ~1100-node synthetic
 wiki ([`examples/synthetic-wiki/`](./examples/synthetic-wiki), generator:
 [`scripts/gen-synthetic-wiki.mjs`](./scripts/gen-synthetic-wiki.mjs)), chosen because it's large
-enough to actually show off the GPU-rendered clustering/motion — the real workspace wiki this tool
+enough to actually show off the 3D ball's clustering/motion — the real workspace wiki this tool
 was built for tops out around 40 nodes, too small to make the point.
 
-Zero-config, `npm run dev`/`build` and the CLI all show the smaller sample wiki in
-[`examples/demo-wiki/`](./examples/demo-wiki) instead — enough pages to exercise every feature on a
-fresh clone, and it doubles as the tool's own docs. Point `WIKI_DIR` (or the CLI `--wiki` flag) at
-any other folder to graph your own wiki instead — see Quick start below.
+`npm run dev`/`build` default to this same dense synthetic wiki (`WIKI_DIR` defaults to
+`examples/synthetic-wiki`) so local behavior matches the live demo — since it's gitignored, run
+`npm run gen-synthetic-wiki` once after cloning before a bare `npm run dev`. The CLI's `--wiki`
+flag is always explicit and unaffected; its own zero-setup example points at the smaller
+[`examples/demo-wiki/`](./examples/demo-wiki) instead (enough pages to exercise every feature
+without generating anything first, and it doubles as the tool's own docs). Point `WIKI_DIR` (or
+the CLI `--wiki` flag) at any other folder to graph your own wiki instead — see Quick start below.
 
 ![Graph view of the dense synthetic demo wiki: type-clustered nodes, ghost links dashed](./docs/screenshots/graph-view.png)
 *The force-directed graph view — dark theme, dense synthetic wiki loaded.*
@@ -101,7 +105,7 @@ npm run stop      # alias for `wikilink-graph stop`
 
 | Var | Default | Meaning |
 |---|---|---|
-| `WIKI_DIR` | `examples/demo-wiki` | Source wiki folder |
+| `WIKI_DIR` | `examples/synthetic-wiki` | Source wiki folder (gitignored — run `npm run gen-synthetic-wiki` once after cloning) |
 | `WIKI_EXCLUDE` | `INDEX,synthesis` | Slugs hidden by default (togglable) |
 | `PORT` | `5179` | Vite serve port |
 | `WIKI_WATCH` | unset | `1` enables `--watch`'s re-parse + full-reload behavior (dev mode only) |
